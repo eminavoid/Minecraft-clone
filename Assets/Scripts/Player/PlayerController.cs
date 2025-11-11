@@ -22,6 +22,7 @@ public class PlayerController : MonoBehaviour
     private CharacterController _controller;
 
     private float _verticalVelocity;
+    [SerializeField]
     private float _gravityValue = -9.81f;
     private bool _isGrounded;
 
