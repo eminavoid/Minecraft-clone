@@ -8,18 +8,41 @@ using static BlockType;
 /// </summary>
 public static class TextureAtlasManager
 {
-    // !! IMPORTANT !!
-    // Change these to match your texture atlas.
-    // I am guessing 20x12 based on your image.
-    private static readonly int _atlasWidthInTiles = 64;
-    private static readonly int _atlasHeightInTiles = 32;
+    // --- Private Static Fields ---
+    // These will be set by the Initialize method
+    private static int _atlasWidthInTiles;
+    private static int _atlasHeightInTiles;
 
-    // The normalized size of a single tile (calculated separately)
-    private static readonly float _normalizedTileWidth = 1f / _atlasWidthInTiles;
-    private static readonly float _normalizedTileHeight = 1f / _atlasHeightInTiles;
+    private static float _normalizedTileWidth;
+    private static float _normalizedTileHeight;
 
     // A pre-allocated array to return UVs in, avoiding 'new' calls
     private static Vector2[] _uvs = new Vector2[4];
+
+    /// <summary>
+    /// Call this once at game startup (from World.cs)
+    /// to configure the manager with the atlas settings.
+    /// </summary>
+    /// <param name="atlasTexture">The Texture2D of the atlas file.</param>
+    /// <param name="tileSize">The size of one tile in pixels (e.g., 16).</param>
+    public static void Initialize(Texture2D atlasTexture, int tileSize)
+    {
+        if (atlasTexture == null)
+        {
+            Debug.LogError("TextureAtlasManager: Atlas Texture is null!");
+            return;
+        }
+
+        // Calculate the atlas size in tiles
+        _atlasWidthInTiles = atlasTexture.width / tileSize;
+        _atlasHeightInTiles = atlasTexture.height / tileSize;
+
+        // Calculate the normalized (0-1) size of a single tile
+        _normalizedTileWidth = 1f / _atlasWidthInTiles;
+        _normalizedTileHeight = 1f / _atlasHeightInTiles;
+
+        Debug.Log($"TextureAtlasManager Initialized: Atlas is {_atlasWidthInTiles}x{_atlasHeightInTiles} tiles.");
+    }
 
     /// <summary>
     /// Gets the four UV coordinates for a quad based on
@@ -29,19 +52,18 @@ public static class TextureAtlasManager
     /// <returns>An array of 4 Vector2s for the mesh quad.</returns>
     public static Vector2[] GetUVs(TextureAtlasCoord coord)
     {
-        // Calculate the min/max UV coordinates
-        // Y is inverted: Atlas (0,0) is top-left,
-        // UV (0,0) is bottom-left.
+        if (_atlasWidthInTiles == 0)
+        {
+            Debug.LogError("TextureAtlasManager not initialized! Call Initialize() first.");
+            return new Vector2[4]; // Return empty array to avoid crashes
+        }
 
-        // --- THIS IS THE FIXED LOGIC ---
-        // Use width for X, height for Y
+        // Calculate the min/max UV coordinates
         float uvXMin = coord.X * _normalizedTileWidth;
         float uvXMax = (coord.X + 1) * _normalizedTileWidth;
 
         float uvYMin = 1.0f - (coord.Y + 1) * _normalizedTileHeight;
         float uvYMax = 1.0f - (coord.Y) * _normalizedTileHeight;
-        // --- END FIXED LOGIC ---
-
 
         // Follow the vertex order:
         // 0: Bottom-Left (MinX, MinY)

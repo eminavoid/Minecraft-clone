@@ -21,7 +21,6 @@ public class ChunkRenderer : MonoBehaviour
     private List<Vector2> _uvs = new List<Vector2>();
 
     // This array maps our 6 directions (1-6) to the BlockFace enum
-    // We will use this to get the correct texture coordinates.
     private static readonly BlockFace[] _dirToBlockFace =
     {
         BlockFace.Right,  // 1 (+X)
@@ -69,8 +68,6 @@ public class ChunkRenderer : MonoBehaviour
             int sliceWidth = (u == 1) ? Chunk.ChunkHeight : Chunk.ChunkWidth;
             int sliceHeight = (v == 1) ? Chunk.ChunkHeight : Chunk.ChunkWidth;
 
-            // This mask stores [BlockID, FaceDirection]
-            // We use two bytes per entry: [BlockID][FaceDir]
             byte[] mask = new byte[sliceWidth * sliceHeight * 2];
 
             // Sweep along the current axis
@@ -87,7 +84,6 @@ public class ChunkRenderer : MonoBehaviour
                         bool isCurrentSolid = BlockDatabase.GetBlockType(currentBlock).IsSolid;
                         bool isNextSolid = BlockDatabase.GetBlockType(nextBlock).IsSolid;
 
-                        // Check if we have a face
                         if (isCurrentSolid == isNextSolid)
                         {
                             mask[n++] = 0; mask[n++] = 0; // No face
@@ -208,96 +204,6 @@ public class ChunkRenderer : MonoBehaviour
         return neighborChunk.GetBlock(localX, y, localZ);
     }
 
-    /// <summary>
-    /// --- THIS IS THE FINAL, CORRECTED AddQuad METHOD ---
-    /// </summary>
-    private void AddQuad(Vector3 v1, Vector3 v2, Vector3 v3, Vector3 v4,
-                         BlockFace face, BlockType type, int w, int h, int axis, int faceDir)
-    {
-        int vIndex = _vertices.Count;
-
-        // --- Winding Order (This was correct) ---
-        bool isFrontFace = (faceDir % 2 != 0);
-
-        // Add vertices
-        _vertices.Add(v1); // v1 (index 0)
-        _vertices.Add(v2); // v2 (index 1)
-        _vertices.Add(v3); // v3 (index 2)
-        _vertices.Add(v4); // v4 (index 3)
-
-        // Add triangles with correct winding order
-        // This is the winding order from the version that "fixed the orientation"
-        if (isFrontFace)
-        {
-            // Clockwise for +X, +Y, +Z
-            // (0, 1, 2) -> (v1, v2, v3)
-            // (0, 2, 3) -> (v1, v3, v4)
-            _triangles.Add(vIndex + 0);
-            _triangles.Add(vIndex + 1);
-            _triangles.Add(vIndex + 2);
-            _triangles.Add(vIndex + 0);
-            _triangles.Add(vIndex + 2);
-            _triangles.Add(vIndex + 3);
-        }
-        else
-        {
-            // Clockwise for -X, -Y, -Z
-            // (0, 3, 2) -> (v1, v4, v3)
-            // (0, 2, 1) -> (v1, v3, v2)
-            _triangles.Add(vIndex + 0);
-            _triangles.Add(vIndex + 3);
-            _triangles.Add(vIndex + 2);
-            _triangles.Add(vIndex + 0);
-            _triangles.Add(vIndex + 2);
-            _triangles.Add(vIndex + 1);
-        }
-
-        // --- FIX #2: Correct UV Mapping ---
-        // This is the UV logic from the version that fixed the "rotated" textures
-        TextureAtlasCoord texCoord = type.GetTextureCoords(face);
-        Vector2[] uvs = TextureAtlasManager.GetUVs(texCoord);
-
-        Vector2 uv0 = uvs[0]; // Bottom-Left
-        Vector2 uv1 = uvs[1]; // Top-Left
-        Vector2 uv2 = uvs[2]; // Top-Right
-
-        float uvWidth = uv2.x - uv0.x;
-        float uvHeight = uv1.y - uv0.y;
-
-        int texWidth = w;
-        int texHeight = h;
-
-        // axis 0 = X (Left/Right)
-        // axis 1 = Y (Top/Bottom)
-        // axis 2 = Z (Front/Back)
-
-        // This logic correctly maps the greedy w/h to the texture's U/V
-        if (axis == 1) // Y-axis face (Top/Bottom)
-        {
-            texWidth = h;
-            texHeight = w;
-        }
-        else if (axis == 0) // X-axis face (Left/Right)
-        {
-            texWidth = h;
-            texHeight = w;
-        }
-        // else axis 2 (Z-axis, Front/Back), UVs are correct (w=X, h=Y)
-
-        // Calculate the four tiled UV coordinates
-        Vector2 uv_v1 = new Vector2(uv0.x, uv0.y);
-        Vector2 uv_v2 = new Vector2(uv0.x + (uvWidth * texWidth), uv0.y);
-        Vector2 uv_v3 = new Vector2(uv0.x + (uvWidth * texWidth), uv0.y + (uvHeight * texHeight));
-        Vector2 uv_v4 = new Vector2(uv0.x, uv0.y + (uvHeight * texHeight));
-
-        // Add UVs in the correct order to match the vertices
-        // This is the part that was broken before.
-        // Now it matches the vertex order v1, v2, v3, v4
-        _uvs.Add(uv_v1); // for v1
-        _uvs.Add(uv_v2); // for v2
-        _uvs.Add(uv_v3); // for v3
-        _uvs.Add(uv_v4); // for v4
-    }
     // (Unchanged)
     private void ApplyMesh()
     {
@@ -311,5 +217,111 @@ public class ChunkRenderer : MonoBehaviour
         _mesh.RecalculateNormals();
         _meshCollider.sharedMesh = null;
         _meshCollider.sharedMesh = _mesh;
+    }
+
+    /// <summary>
+    /// --- THIS IS THE FINAL, COMBINED AddQuad METHOD ---
+    /// </summary>
+    private void AddQuad(Vector3 v1, Vector3 v2, Vector3 v3, Vector3 v4,
+                         BlockFace face, BlockType type, int w, int h, int axis, int faceDir)
+    {
+        int vIndex = _vertices.Count;
+
+        // --- 1. Correct Winding Order (This is the one that works) ---
+        bool isFrontFace = (faceDir % 2 != 0);
+
+        _vertices.Add(v1); // v1 (index 0)
+        _vertices.Add(v2); // v2 (index 1)
+        _vertices.Add(v3); // v3 (index 2)
+        _vertices.Add(v4); // v4 (index 3)
+
+        if (isFrontFace)
+        {
+            // Clockwise for +X, +Y, +Z
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 1);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 3);
+        }
+        else
+        {
+            // Clockwise for -X, -Y, -Z
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 3);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 1);
+        }
+
+        // --- 2. Correct UV Mapping (This is the fix) ---
+        TextureAtlasCoord texCoord = type.GetTextureCoords(face);
+        Vector2[] uvs = TextureAtlasManager.GetUVs(texCoord);
+
+        Vector2 uv0 = uvs[0]; // Bottom-Left
+        Vector2 uv1 = uvs[1]; // Top-Left
+        Vector2 uv2 = uvs[2]; // Top-Right
+
+        float uvWidth = uv2.x - uv0.x;
+        float uvHeight = uv1.y - uv0.y;
+
+        int texWidth, texHeight;
+
+        // axis 0 = X (Left/Right)
+        // axis 1 = Y (Top/Bottom)
+        // axis 2 = Z (Front/Back)
+
+        // This logic correctly maps the greedy w/h to the texture's U/V
+        if (axis == 1) // Y-axis face (Top/Bottom)
+        {
+            // Greedy w is Z-size, h is X-size
+            // We want UV U (width) to map to X-size, V (height) to map to Z-size
+            texWidth = h;
+            texHeight = w;
+        }
+        else if (axis == 0) // X-axis face (Left/Right)
+        {
+            // Greedy w is Y-size, h is Z-size
+            // We want UV U (width) to map to Z-size, V (height) to map to Y-size
+            texWidth = h;
+            texHeight = w;
+        }
+        else // Z-axis face (Front/Back)
+        {
+            // Greedy w is X-size, h is Y-size
+            // We want UV U (width) to map to X-size, V (height) to map to Y-size
+            texWidth = w;
+            texHeight = h;
+        }
+
+        // Calculate the four tiled UV coordinates
+        Vector2 uv_v1 = new Vector2(uv0.x, uv0.y); // Bottom-Left
+        Vector2 uv_v2 = new Vector2(uv0.x + (uvWidth * texWidth), uv0.y); // Bottom-Right
+        Vector2 uv_v3 = new Vector2(uv0.x + (uvWidth * texWidth), uv0.y + (uvHeight * texHeight)); // Top-Right
+        Vector2 uv_v4 = new Vector2(uv0.x, uv0.y + (uvHeight * texHeight)); // Top-Left
+
+        // Add UVs in the correct order to match the vertices
+        // This is the part that was wrong before
+
+        if (axis == 2) // Z-axis (Front/Back)
+        {
+            // v1, v2, v3, v4 = bottom-left, bottom-right, top-right, top-left
+            // We need: uv_v1, uv_v2, uv_v3, uv_v4
+            _uvs.Add(uv_v1);
+            _uvs.Add(uv_v2);
+            _uvs.Add(uv_v3);
+            _uvs.Add(uv_v4);
+        }
+        else // X-axis and Y-axis
+        {
+            // v1, v2, v3, v4 = bottom-left, top-left, top-right, bottom-right
+            // We need: uv_v1, uv_v4, uv_v3, uv_v2
+            _uvs.Add(uv_v1); // for v1 (bottom-left)
+            _uvs.Add(uv_v4); // for v2 (top-left)
+            _uvs.Add(uv_v3); // for v3 (top-right)
+            _uvs.Add(uv_v2); // for v4 (bottom-right)
+        }
     }
 }

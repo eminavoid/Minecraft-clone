@@ -30,6 +30,14 @@ public class World : MonoBehaviour
     [SerializeField]
     private int _viewDistance = 8;
 
+    [Tooltip("Assign your main TextureAtlas.png file here.")]
+    [SerializeField]
+    private Texture2D _textureAtlas;
+
+    [Tooltip("The pixel size of a single tile (e.g., 16).")]
+    [SerializeField]
+    private int _tileSize = 16;
+
 
     // --- Private Fields ---
     private WorldGenerator _generator;
@@ -45,7 +53,18 @@ public class World : MonoBehaviour
 
     private void Awake()
     {
-        // 1. Initialize the Block Database
+        // --- NEW ---
+        // 1. Initialize the Texture Atlas Manager
+        // This MUST be done before anything else tries to get UVs.
+        if (_textureAtlas == null)
+        {
+            Debug.LogError("World: Texture Atlas is not assigned!");
+            return;
+        }
+        TextureAtlasManager.Initialize(_textureAtlas, _tileSize);
+        // --- END NEW ---
+
+        // 2. Initialize the Block Database
         if (_blockDatabase == null)
         {
             Debug.LogError("World: BlockDatabase is not assigned!");
@@ -53,7 +72,7 @@ public class World : MonoBehaviour
         }
         _blockDatabase.Initialize();
 
-        // 2. Create our generator instance
+        // 3. Create our generator instance
         _generator = new WorldGenerator(_worldSeed);
     }
 

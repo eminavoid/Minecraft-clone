@@ -17,7 +17,8 @@ public class BlockDatabase : ScriptableObject
     // We make it static so it's globally accessible after initialization.
     private static Dictionary<byte, BlockType> _blockDictionary;
 
-    // We need a public 'Air' block for many checks
+    private static Dictionary<string, BlockType> _blockNameDictionary;
+
     public static BlockType Air { get; private set; }
 
     /// <summary>
@@ -27,6 +28,8 @@ public class BlockDatabase : ScriptableObject
     {
         _blockDictionary = new Dictionary<byte, BlockType>();
 
+        _blockNameDictionary = new Dictionary<string, BlockType>();
+
         foreach (BlockType block in _allBlockTypes)
         {
             if (_blockDictionary.ContainsKey(block.BlockID))
@@ -35,6 +38,13 @@ public class BlockDatabase : ScriptableObject
                 continue;
             }
             _blockDictionary.Add(block.BlockID, block);
+
+            if (_blockNameDictionary.ContainsKey(block.BlockName))
+            {
+                Debug.LogError($"BlockDatabase: Duplicate Block Name \"{block.BlockName}\" found on {block.name}.");
+                continue;
+            }
+            _blockNameDictionary.Add(block.BlockName, block);
 
             // Find and store the 'Air' block
             if (block.BlockID == 0)
@@ -65,5 +75,22 @@ public class BlockDatabase : ScriptableObject
         // Return Air as a safe fallback for unknown IDs
         Debug.LogWarning($"GetBlockType: Unknown Block ID {id}. Returning Air.");
         return Air;
+    }
+
+    public static BlockType GetBlockType(string blockName)
+    {
+        if (_blockNameDictionary == null)
+        {
+            Debug.LogError("BlockDatabase not initialized!");
+            return null;
+        }
+
+        if (_blockNameDictionary.TryGetValue(blockName, out BlockType block))
+        {
+            return block;
+        }
+
+        Debug.LogError($"GetBlockType: Unknown Block Name \"{blockName}\".");
+        return Air; // Return Air as a safe fallback
     }
 }

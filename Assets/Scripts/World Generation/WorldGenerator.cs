@@ -25,12 +25,10 @@ public class WorldGenerator
     [Tooltip("How many layers of dirt to place below grass.")]
     private int _dirtLayerDepth = 3;
 
-    // --- Block IDs (Hardcoded for this example) ---
-    // In a real project, you'd get these from the BlockDatabase.
-    private const byte AIR_ID = 0;
-    private const byte GRASS_ID = 1;
-    private const byte DIRT_ID = 2;
-    private const byte STONE_ID = 3;
+    private readonly byte _airID;
+    private readonly byte _grassID;
+    private readonly byte _dirtID;
+    private readonly byte _stoneID;
 
     /// <summary>
     /// Constructor to set up the generator with a seed.
@@ -38,6 +36,11 @@ public class WorldGenerator
     public WorldGenerator(int seed)
     {
         _seed = seed;
+
+        _airID = BlockDatabase.GetBlockType("Air").BlockID;
+        _grassID = BlockDatabase.GetBlockType("Grass").BlockID;
+        _dirtID = BlockDatabase.GetBlockType("Dirt").BlockID;
+        _stoneID = BlockDatabase.GetBlockType("Stone").BlockID;
     }
 
     /// <summary>
@@ -84,22 +87,22 @@ public class WorldGenerator
                     if (y > terrainHeight)
                     {
                         // Anything above the terrain is Air
-                        chunk.SetBlock(x, y, z, AIR_ID);
+                        chunk.SetBlock(x, y, z, _airID);
                     }
                     else if (y == terrainHeight)
                     {
                         // The very top layer is Grass
-                        chunk.SetBlock(x, y, z, GRASS_ID);
+                        chunk.SetBlock(x, y, z, _grassID);
                     }
-                    else if (y > terrainHeight - _dirtLayerDepth)
+                    else if (y >= terrainHeight - _dirtLayerDepth)
                     {
                         // Just below the grass is Dirt
-                        chunk.SetBlock(x, y, z, DIRT_ID);
+                        chunk.SetBlock(x, y, z, _dirtID);
                     }
                     else
                     {
                         // Everything else below is Stone
-                        chunk.SetBlock(x, y, z, STONE_ID);
+                        chunk.SetBlock(x, y, z, _stoneID);
                     }
                 }
             }
