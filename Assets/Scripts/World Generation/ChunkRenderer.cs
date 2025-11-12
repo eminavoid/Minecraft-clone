@@ -1,42 +1,31 @@
-﻿// File: ChunkRenderer.cs
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.LightTransport;
 using static BlockType;
 
-/// <summary>
-/// This MonoBehaviour is responsible for rendering the visual mesh
-/// of a single Chunk data object.
-/// 
-/// It follows SOLID by having one responsibility:
-/// Convert Chunk data into a visual Mesh.
-/// </summary>
+
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
 public class ChunkRenderer : MonoBehaviour
 {
+    // --- Data ---
+    private Chunk _chunkData;
+
+    // --- NEW: Reference to the main World ---
+    private World _world;
+
     // --- Component References ---
     private MeshFilter _meshFilter;
     private MeshCollider _meshCollider;
     private Mesh _mesh;
 
-    // --- Data ---
-    private Chunk _chunkData;
-
     // --- Mesh Build Data ---
-    // We create these lists once and reuse them
-    // to avoid allocating new memory every time.
     private List<Vector3> _vertices = new List<Vector3>();
     private List<int> _triangles = new List<int>();
     private List<Vector2> _uvs = new List<Vector2>();
 
     // --- STATIC DATA (for performance) ---
-    // This data is shared by all ChunkRenderer instances.
-
-    // The 6 triangle indices for a quad.
-    // This order (Clockwise) ensures the face is visible from the outside.
     private static readonly int[] _faceTriangles = { 0, 2, 1, 0, 3, 2 };
 
-    // Vertex positions for all 6 faces of a 1x1x1 cube.
-    // We add (x,y,z) to these in the loop.
     private static readonly Vector3[] _topFaceVertices =
         { new Vector3(0, 1, 0), new Vector3(0, 1, 1), new Vector3(1, 1, 1), new Vector3(1, 1, 0) };
     private static readonly Vector3[] _bottomFaceVertices =
@@ -50,8 +39,6 @@ public class ChunkRenderer : MonoBehaviour
     private static readonly Vector3[] _leftFaceVertices =
         { new Vector3(0, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 1, 1), new Vector3(0, 0, 1) };
 
-    // --- END STATIC DATA ---
-
     private void Awake()
     {
         // Get component references
@@ -64,18 +51,14 @@ public class ChunkRenderer : MonoBehaviour
         _meshFilter.mesh = _mesh;
     }
 
-    /// <summary>
-    /// Sets the chunk data and triggers the initial mesh generation.
-    /// </summary>
-    public void Initialize(Chunk chunk)
+
+    public void Initialize(Chunk chunk, World world)
     {
         _chunkData = chunk;
+        _world = world;
         GenerateMesh();
     }
 
-    /// <summary>
-    /// The core mesh generation logic.
-    /// </summary>
     public void GenerateMesh()
     {
         // 1. Clear old data from the lists
@@ -133,36 +116,53 @@ public class ChunkRenderer : MonoBehaviour
         ApplyMesh();
     }
 
-    /// <summary>
-    /// Checks if a block at a given local coordinate is solid.
-    /// This handles bounds checks for outside the chunk.
-    /// </summary>
     private bool IsNeighborSolid(int x, int y, int z)
     {
-        // --- Y-Axis Bounds Check ---
-        // If below the world, it's solid (bedrock)
+        // --- Y-Axis Bounds Check (Vertical) ---
         if (y < 0) return true;
-        // If above the world, it's air
         if (y >= Chunk.ChunkHeight) return false;
 
-        // --- X/Z-Axis Bounds Check (Cross-Chunk) ---
-        // TODO: This is where you would check neighbor chunks.
-        // For now, if it's outside our X/Z bounds,
-        // we'll assume it's air so we can see the edge of the chunk.
-        if (x < 0 || x >= Chunk.ChunkWidth || z < 0 || z >= Chunk.ChunkDepth)
+        // --- X/Z-Axis Bounds Check (Horizontal) ---
+        if (x >= 0 && x < Chunk.ChunkWidth && z >= 0 && z < Chunk.ChunkDepth)
+        {
+            byte neighborID = _chunkData.GetBlock(x, y, z);
+            return BlockDatabase.GetBlockType(neighborID).IsSolid;
+        }
+
+        // --- IT'S OUTSIDE THIS CHUNK ---
+        Vector3 worldPos = transform.position;
+
+        // Now find pos of the NEIGHBOR block
+        int neighborWorldX = (int)worldPos.x + x;
+        int neighborWorldY = (int)worldPos.y + y;
+        int neighborWorldZ = (int)worldPos.z + z;
+
+        Chunk neighborChunk = _world.GetChunkFromWorldPos(new Vector3(neighborWorldX, 0, neighborWorldZ));
+
+        // If the neighbor chunk isn't loaded, it's "air"
+        if (neighborChunk == null)
         {
             return false;
         }
 
-        // It's inside our chunk. Get its ID and check its type.
-        byte neighborID = _chunkData.GetBlock(x, y, z);
-        return BlockDatabase.GetBlockType(neighborID).IsSolid;
+        //Find the local coords *within that chunk*
+
+        int localX = x;
+        int localZ = z;
+
+        if (x < 0) localX = Chunk.ChunkWidth + x; // -1 + 16 = 15
+        else if (x >= Chunk.ChunkWidth) localX = x - Chunk.ChunkWidth; // 16 - 16 = 0
+
+        if (z < 0) localZ = Chunk.ChunkDepth + z;
+        else if (z >= Chunk.ChunkDepth) localZ = z - Chunk.ChunkDepth;
+
+
+
+        // Finally, get the block from the neighbor chunk
+        byte neighborBlockID = neighborChunk.GetBlock(localX, y, localZ);
+        return BlockDatabase.GetBlockType(neighborBlockID).IsSolid;
     }
 
-    /// <summary>
-    /// Adds the 4 vertices, 6 triangle indices, and 4 UVs
-    /// for a single block face.
-    /// </summary>
     private void AddFace(BlockFace face, int x, int y, int z, byte blockID)
     {
         // 1. Get the BlockType
@@ -182,8 +182,6 @@ public class ChunkRenderer : MonoBehaviour
         Vector3 blockPosition = new Vector3(x, y, z);
 
         // 4. Add vertices and UVs based on face
-        // The UV mapping logic here is correct, but the triangle winding
-        // needs to be different for the Top face.
 
         switch (face)
         {
@@ -197,8 +195,6 @@ public class ChunkRenderer : MonoBehaviour
                 _uvs.Add(uvs[3]); // Bottom-Right
                 _uvs.Add(uvs[2]); // Top-Right
 
-                // --- THIS IS THE FIX ---
-                // Add triangles MANUALLY with correct winding for Top
                 _triangles.Add(vIndex + 0);
                 _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 2);
@@ -217,7 +213,6 @@ public class ChunkRenderer : MonoBehaviour
                 _uvs.Add(uvs[3]); // Bottom-Right
                 _uvs.Add(uvs[2]); // Top-Right
 
-                // Use the default triangle winding
                 _triangles.Add(vIndex + _faceTriangles[0]);
                 _triangles.Add(vIndex + _faceTriangles[1]);
                 _triangles.Add(vIndex + _faceTriangles[2]);
@@ -236,7 +231,6 @@ public class ChunkRenderer : MonoBehaviour
                 _uvs.Add(uvs[2]); // Top-Right
                 _uvs.Add(uvs[3]); // Bottom-Right
 
-                // Use the default triangle winding
                 _triangles.Add(vIndex + _faceTriangles[0]);
                 _triangles.Add(vIndex + _faceTriangles[1]);
                 _triangles.Add(vIndex + _faceTriangles[2]);
@@ -255,7 +249,6 @@ public class ChunkRenderer : MonoBehaviour
                 _uvs.Add(uvs[1]); // Top-Left
                 _uvs.Add(uvs[0]); // Bottom-Left
 
-                // Use the default triangle winding
                 _triangles.Add(vIndex + _faceTriangles[0]);
                 _triangles.Add(vIndex + _faceTriangles[1]);
                 _triangles.Add(vIndex + _faceTriangles[2]);
@@ -274,7 +267,6 @@ public class ChunkRenderer : MonoBehaviour
                 _uvs.Add(uvs[2]); // Top-Right
                 _uvs.Add(uvs[3]); // Bottom-Right
 
-                // Use the default triangle winding
                 _triangles.Add(vIndex + _faceTriangles[0]);
                 _triangles.Add(vIndex + _faceTriangles[1]);
                 _triangles.Add(vIndex + _faceTriangles[2]);
@@ -293,7 +285,6 @@ public class ChunkRenderer : MonoBehaviour
                 _uvs.Add(uvs[1]); // Top-Left
                 _uvs.Add(uvs[0]); // Bottom-Left
 
-                // Use the default triangle winding
                 _triangles.Add(vIndex + _faceTriangles[0]);
                 _triangles.Add(vIndex + _faceTriangles[1]);
                 _triangles.Add(vIndex + _faceTriangles[2]);
@@ -304,27 +295,21 @@ public class ChunkRenderer : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Applies all the vertex, triangle, and UV data
-    /// to the mesh and recalculates physics.
-    /// </summary>
     private void ApplyMesh()
     {
-        // Debugging check
         if (_vertices.Count != _uvs.Count)
         {
             Debug.LogError($"Vertex ({_vertices.Count}) and UV ({_uvs.Count}) count MISMATCH. Mesh will be black/broken.");
         }
 
-        _mesh.Clear(); // Clear any old data
+        _mesh.Clear();
         _mesh.SetVertices(_vertices);
-        _mesh.SetTriangles(_triangles, 0); // '0' is the submesh index
-        _mesh.SetUVs(0, _uvs); // '0' is the UV channel
+        _mesh.SetTriangles(_triangles, 0);
+        _mesh.SetUVs(0, _uvs);
 
-        _mesh.RecalculateNormals(); // Calculate lighting
+        _mesh.RecalculateNormals();
 
-        // Update the collider
-        _meshCollider.sharedMesh = null; // Must clear old one first
+        _meshCollider.sharedMesh = null;
         _meshCollider.sharedMesh = _mesh;
     }
 }

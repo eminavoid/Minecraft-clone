@@ -26,18 +26,22 @@ public class World : MonoBehaviour
     [SerializeField]
     private int _worldSeed = 12345;
 
+    [Tooltip("How many chunks to load in each direction (e.g., 8 = 17x17 grid).")]
+    [SerializeField]
+    private int _viewDistance = 8;
+
+
     // --- Private Fields ---
     private WorldGenerator _generator;
+    private Vector2Int _currentPlayerChunk; // The chunk the player is in
 
-    // --- NEW CHUNK MANAGEMENT ---
-    // These dictionaries will track all active chunks
-
-    [Tooltip("Tracks all loaded chunk data.")]
+    // --- Chunk Management ---
     private Dictionary<Vector2Int, Chunk> _chunkDataDictionary = new Dictionary<Vector2Int, Chunk>();
-
-    [Tooltip("Tracks all loaded chunk GameObjects.")]
     private Dictionary<Vector2Int, GameObject> _chunkObjectDictionary = new Dictionary<Vector2Int, GameObject>();
-    // ---
+
+    // --- NEW: Chunk loading/unloading queues ---
+    private Queue<Vector2Int> _chunksToLoad = new Queue<Vector2Int>();
+    private List<Vector2Int> _chunksToUnload = new List<Vector2Int>();
 
     private void Awake()
     {
@@ -56,38 +60,42 @@ public class World : MonoBehaviour
     // --- THIS METHOD IS UPDATED ---
     private void Start()
     {
-        Debug.Log("--- Generating 5x5 initial world ---");
+        Debug.Log("--- Generating initial spawn chunk ---");
 
-        // Loop from -2 to 2 (total of 5)
-        for (int x = -2; x <= 2; x++)
+        // 1. Generate and render only the center chunk (0,0)
+        Chunk centerChunkData = GenerateAndRenderChunk(Vector2Int.zero);
+
+        // 2. Spawn the player
+        SpawnPlayer(centerChunkData, Vector2Int.zero);
+
+        // 3. Set the player's current chunk
+        _currentPlayerChunk = Vector2Int.zero;
+
+        // 4. Load the initial chunks around the player
+        UpdateLoadedChunks(true);
+    }
+
+    private void Update()
+    {
+        // Find the player's current chunk position
+        Vector2Int playerChunk = GetChunkCoordsFromPosition(_playerController.transform.position);
+
+        // If the player has moved to a new chunk, update the world
+        if (playerChunk != _currentPlayerChunk)
         {
-            // Loop from -2 to 2 (total of 5)
-            for (int z = -2; z <= 2; z++)
-            {
-                // Generate and render each chunk
-                GenerateAndRenderChunk(new Vector2Int(x, z));
-            }
+            _currentPlayerChunk = playerChunk;
+            UpdateLoadedChunks(false);
         }
 
-        Debug.Log("--- Initial world generation complete ---");
-
-        // Now spawn the player at the center (0,0) chunk
-        // We get the data from our new dictionary
-        if (_chunkDataDictionary.TryGetValue(Vector2Int.zero, out Chunk centerChunkData))
+        // Process our loading queue to prevent lag
+        // Load one chunk per frame
+        if (_chunksToLoad.Count > 0)
         {
-            SpawnPlayer(centerChunkData, Vector2Int.zero);
-        }
-        else
-        {
-            Debug.LogError("Center chunk (0,0) was not generated! Cannot spawn player.");
+            Vector2Int coordsToLoad = _chunksToLoad.Dequeue();
+            GenerateAndRenderChunk(coordsToLoad);
         }
     }
 
-    // --- THIS METHOD IS UPDATED ---
-    /// <summary>
-    /// Creates data, builds GameObject, and renders a single chunk.
-    /// Now stores the chunk in dictionaries.
-    /// </summary>
     private Chunk GenerateAndRenderChunk(Vector2Int chunkCoords)
     {
         // --- Step 1: Create Chunk Data ---
@@ -108,7 +116,6 @@ public class World : MonoBehaviour
         );
         chunkObject.transform.SetParent(this.transform);
 
-        // --- NEW: Store GameObject in dictionary ---
         _chunkObjectDictionary.Add(chunkCoords, chunkObject);
 
         // --- Step 3: Add Rendering Components ---
@@ -117,16 +124,15 @@ public class World : MonoBehaviour
         meshRenderer.material = _worldMaterial;
 
         // --- Step 4: Initialize! ---
-        chunkRenderer.Initialize(chunkData);
+        chunkRenderer.Initialize(chunkData, this);
+
+        // --- Step 6: Update chunk eighbors ---
+        UpdateNeighbors(chunkCoords);
 
         // --- Step 5: Return the data ---
         return chunkData;
     }
 
-    // --- THIS METHOD IS UNCHANGED ---
-    /// <summary>
-    /// Finds a safe spawn point in the chunk and teleports the player.
-    /// </summary>
     private void SpawnPlayer(Chunk chunk, Vector2Int chunkCoords)
     {
         if (_playerController == null)
@@ -164,23 +170,133 @@ public class World : MonoBehaviour
         Debug.Log($"Player spawned at {spawnPosition}");
     }
 
-    // --- NEW HELPER METHODS (for our next step) ---
-
-    /// <summary>
-    /// Gets the data for a chunk at the given coordinates.
-    /// </summary>
-    /// <returns>Chunk data, or null if not loaded.</returns>
     public Chunk GetChunkData(Vector2Int chunkCoords)
     {
         _chunkDataDictionary.TryGetValue(chunkCoords, out Chunk chunk);
         return chunk;
     }
 
-    /// <summary>
-    /// Checks if a chunk is already loaded.
-    /// </summary>
     public bool IsChunkLoaded(Vector2Int chunkCoords)
     {
         return _chunkDataDictionary.ContainsKey(chunkCoords);
+    }
+
+    private void UpdateLoadedChunks(bool isFirstLoad)
+    {
+        // 1. --- Unload Chunks ---
+        // We'll store chunks to unload in a list first to avoid errors
+        // by modifying the dictionary while looping.
+        _chunksToUnload.Clear();
+        foreach (Vector2Int loadedChunkCoords in _chunkObjectDictionary.Keys)
+        {
+            // Calculate distance (Manhattan distance is faster)
+            int dist = Mathf.Abs(loadedChunkCoords.x - _currentPlayerChunk.x) +
+                       Mathf.Abs(loadedChunkCoords.y - _currentPlayerChunk.y);
+
+            // If it's too far, queue it for unloading
+            if (dist > _viewDistance)
+            {
+                _chunksToUnload.Add(loadedChunkCoords);
+            }
+        }
+
+        // Now, safely unload them
+        foreach (Vector2Int coords in _chunksToUnload)
+        {
+            UnloadChunk(coords);
+        }
+
+        // 2. --- Load Chunks ---
+        // Loop in a square around the player
+        for (int x = -_viewDistance; x <= _viewDistance; x++)
+        {
+            for (int z = -_viewDistance; z <= _viewDistance; z++)
+            {
+                Vector2Int chunkCoords = new Vector2Int(
+                    _currentPlayerChunk.x + x,
+                    _currentPlayerChunk.y + z
+                );
+
+                // If this chunk isn't loaded and isn't already in the queue...
+                if (!IsChunkLoaded(chunkCoords) && !_chunksToLoad.Contains(chunkCoords))
+                {
+                    // If it's the first time, load it instantly.
+                    // Otherwise, add it to the queue.
+                    if (isFirstLoad)
+                    {
+                        GenerateAndRenderChunk(chunkCoords);
+                    }
+                    else
+                    {
+                        _chunksToLoad.Enqueue(chunkCoords);
+                    }
+                }
+            }
+        }
+    }
+
+    private void UnloadChunk(Vector2Int chunkCoords)
+    {
+        UpdateNeighbors(chunkCoords);
+
+        // 1. Destroy the GameObject
+        if (_chunkObjectDictionary.TryGetValue(chunkCoords, out GameObject chunkObject))
+        {
+            Destroy(chunkObject);
+            _chunkObjectDictionary.Remove(chunkCoords);
+        }
+
+        // 2. Remove the data
+        if (_chunkDataDictionary.ContainsKey(chunkCoords))
+        {
+            _chunkDataDictionary.Remove(chunkCoords);
+        }
+    }
+
+    public Chunk GetChunkFromWorldPos(Vector3 worldPos)
+    {
+        // First, convert the world pos to chunk coords
+        Vector2Int chunkCoords = GetChunkCoordsFromPosition(worldPos);
+
+        // Now, try to get the data from our dictionary
+        _chunkDataDictionary.TryGetValue(chunkCoords, out Chunk chunk);
+        return chunk;
+    }
+
+    private Vector2Int GetChunkCoordsFromPosition(Vector3 position)
+    {
+        int x = Mathf.FloorToInt(position.x / Chunk.ChunkWidth);
+        int z = Mathf.FloorToInt(position.z / Chunk.ChunkDepth);
+        return new Vector2Int(x, z);
+    }
+
+    private void UpdateChunk(Vector2Int chunkCoords)
+    {
+
+        // Check if the chunk is loaded and has a GameObject
+        if (_chunkObjectDictionary.TryGetValue(chunkCoords, out GameObject chunkObject))
+        {
+            // Get its renderer and tell it to regenerate
+            ChunkRenderer renderer = chunkObject.GetComponent<ChunkRenderer>();
+            if (renderer != null)
+            {
+                renderer.GenerateMesh();
+            }
+        }
+    }
+
+    private void UpdateNeighbors(Vector2Int chunkCoords)
+    {
+        // Get the coordinates for all 4 neighbors
+        Vector2Int front = new Vector2Int(chunkCoords.x, chunkCoords.y + 1);
+        Vector2Int back = new Vector2Int(chunkCoords.x, chunkCoords.y - 1);
+        Vector2Int right = new Vector2Int(chunkCoords.x + 1, chunkCoords.y);
+        Vector2Int left = new Vector2Int(chunkCoords.x - 1, chunkCoords.y);
+
+        // Tell each neighbor to update (if it's loaded)
+        UpdateChunk(front);
+        UpdateChunk(back);
+        UpdateChunk(right);
+        UpdateChunk(left);
     }
 }
