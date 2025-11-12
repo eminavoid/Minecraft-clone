@@ -393,10 +393,14 @@ MonoBehaviour:
   _blockDatabase: {fileID: 11400000, guid: e8b426fb294672941b907137fbf6598c, type: 2}
   _worldMaterial: {fileID: 2100000, guid: a2e26e53781ccca4e99ba435f211a602, type: 2}
   _playerController: {fileID: 167263663}
-  _worldSeed: 12345
-  _viewDistance: 3
   _textureAtlas: {fileID: 2800000, guid: 4edc13c239465364aad469da0b56bcfb, type: 3}
   _tileSize: 16
+  _worldSeed: 12345
+  _viewDistance: 10
+  _noiseScale: 0.02
+  _baseTerrainHeight: 60
+  _terrainAmplitude: 40
+  _dirtLayerDepth: 3
 --- !u!1 &1064372383
 GameObject:
   m_ObjectHideFlags: 0

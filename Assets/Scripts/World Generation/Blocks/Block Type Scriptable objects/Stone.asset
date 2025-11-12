@@ -17,11 +17,11 @@ MonoBehaviour:
   _isSolid: 1
   _isTransparent: 0
   _sideTexture:
-    X: 26
-    Y: 31
+    X: 4
+    Y: 0
   _topTexture:
-    X: 26
-    Y: 31
+    X: 4
+    Y: 0
   _bottomTexture:
-    X: 26
-    Y: 31
+    X: 4
+    Y: 0

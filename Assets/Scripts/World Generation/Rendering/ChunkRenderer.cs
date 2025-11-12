@@ -132,48 +132,36 @@ public class ChunkRenderer : MonoBehaviour
     }
 
     /// <summary>
-    /// --- THIS IS THE NEW, CORRECT AddFace METHOD ---
-    /// Adds the 4 vertices, 6 triangle indices, and 4 UVs
-    /// for a *single* block face with correct winding and UVs.
+    /// --- ESTE ES EL AddFace CON EL WINDING ORDER CORREGIDO ---
     /// </summary>
     private void AddFace(BlockFace face, Vector3 blockPosition, BlockType type)
     {
-        // Get the texture coordinates
         TextureAtlasCoord texCoord = type.GetTextureCoords(face);
-        if (texCoord == null) return; // This block has no texture for this face
+        if (texCoord == null) return;
 
         Vector2[] uvs = TextureAtlasManager.GetUVs(texCoord);
         int vIndex = _vertices.Count;
 
-        // This is the correct winding and UV mapping logic
         switch (face)
         {
-            case BlockFace.Top: // +Y (THIS ONE WORKS)
+            case BlockFace.Top: // +Y (La que funcionaba)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 0)); // Back-Left (0)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 1)); // Front-Left (1)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 1)); // Front-Right (2)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 0)); // Back-Right (3)
-                // (0, 1, 2) (0, 2, 3) - Clockwise
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 1); _triangles.Add(vIndex + 2);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 3);
-                // UVs (matched to vertices)
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[0]); // Bottom-Left
-                _uvs.Add(uvs[3]); // Bottom-Right
-                _uvs.Add(uvs[2]); // Top-Right
+                _uvs.Add(uvs[1]); _uvs.Add(uvs[0]); _uvs.Add(uvs[3]); _uvs.Add(uvs[2]);
                 break;
-
-            // --- ALL OTHER FACES ARE NOW FIXED ---
 
             case BlockFace.Bottom: // -Y
                 _vertices.Add(blockPosition + new Vector3(0, 0, 1)); // Front-Left (0)
                 _vertices.Add(blockPosition + new Vector3(0, 0, 0)); // Back-Left (1)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 0)); // Back-Right (2)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 1)); // Front-Right (3)
-                // (0, 2, 1) (0, 3, 2) - Clockwise
+                // Winding Invertido
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
-                // UVs (matched to vertices)
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
                 break;
 
@@ -182,10 +170,9 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(0, 1, 1)); // Top-Left (1)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 1)); // Top-Right (2)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 1)); // Bottom-Right (3)
-                // (0, 2, 1) (0, 3, 2) - Clockwise
+                // Winding Invertido
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
-                // UVs (matched to vertices)
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
                 break;
 
@@ -194,10 +181,9 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(1, 1, 0)); // Top-Right (1)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 0)); // Top-Left (2)
                 _vertices.Add(blockPosition + new Vector3(0, 0, 0)); // Bottom-Left (3)
-                // (0, 2, 1) (0, 3, 2) - Clockwise
+                // Winding Invertido
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
-                // UVs (matched to vertices)
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
                 break;
 
@@ -206,10 +192,9 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(1, 1, 1)); // Front-Top (1)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 0)); // Back-Top (2)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 0)); // Back-Bottom (3)
-                // (0, 2, 1) (0, 3, 2) - Clockwise
+                // Winding Invertido
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
-                // UVs (matched to vertices)
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
                 break;
 
@@ -218,10 +203,9 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(0, 1, 0)); // Back-Top (1)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 1)); // Front-Top (2)
                 _vertices.Add(blockPosition + new Vector3(0, 0, 1)); // Front-Bottom (3)
-                // (0, 2, 1) (0, 3, 2) - Clockwise
+                // Winding Invertido
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
-                // UVs (matched to vertices)
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
                 break;
         }
