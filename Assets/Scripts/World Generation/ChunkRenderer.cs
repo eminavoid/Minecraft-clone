@@ -1,16 +1,13 @@
-﻿using System.Collections.Generic;
+﻿// File: ChunkRenderer.cs
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.LightTransport;
 using static BlockType;
-
 
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer), typeof(MeshCollider))]
 public class ChunkRenderer : MonoBehaviour
 {
     // --- Data ---
     private Chunk _chunkData;
-
-    // --- NEW: Reference to the main World ---
     private World _world;
 
     // --- Component References ---
@@ -23,34 +20,26 @@ public class ChunkRenderer : MonoBehaviour
     private List<int> _triangles = new List<int>();
     private List<Vector2> _uvs = new List<Vector2>();
 
-    // --- STATIC DATA (for performance) ---
-    private static readonly int[] _faceTriangles = { 0, 2, 1, 0, 3, 2 };
-
-    private static readonly Vector3[] _topFaceVertices =
-        { new Vector3(0, 1, 0), new Vector3(0, 1, 1), new Vector3(1, 1, 1), new Vector3(1, 1, 0) };
-    private static readonly Vector3[] _bottomFaceVertices =
-        { new Vector3(0, 0, 1), new Vector3(0, 0, 0), new Vector3(1, 0, 0), new Vector3(1, 0, 1) };
-    private static readonly Vector3[] _frontFaceVertices =
-        { new Vector3(0, 0, 1), new Vector3(0, 1, 1), new Vector3(1, 1, 1), new Vector3(1, 0, 1) };
-    private static readonly Vector3[] _backFaceVertices =
-        { new Vector3(1, 0, 0), new Vector3(1, 1, 0), new Vector3(0, 1, 0), new Vector3(0, 0, 0) };
-    private static readonly Vector3[] _rightFaceVertices =
-        { new Vector3(1, 0, 1), new Vector3(1, 1, 1), new Vector3(1, 1, 0), new Vector3(1, 0, 0) };
-    private static readonly Vector3[] _leftFaceVertices =
-        { new Vector3(0, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 1, 1), new Vector3(0, 0, 1) };
+    // This array maps our 6 directions (1-6) to the BlockFace enum
+    // We will use this to get the correct texture coordinates.
+    private static readonly BlockFace[] _dirToBlockFace =
+    {
+        BlockFace.Right,  // 1 (+X)
+        BlockFace.Left,   // 2 (-X)
+        BlockFace.Top,    // 3 (+Y)
+        BlockFace.Bottom, // 4 (-Y)
+        BlockFace.Front,  // 5 (+Z)
+        BlockFace.Back    // 6 (-Z)
+    };
 
     private void Awake()
     {
-        // Get component references
         _meshFilter = GetComponent<MeshFilter>();
         _meshCollider = GetComponent<MeshCollider>();
-
-        // Create a new mesh for this chunk
         _mesh = new Mesh();
-        _mesh.name = "ChunkMesh";
+        _mesh.name = "ChunkMesh_Greedy";
         _meshFilter.mesh = _mesh;
     }
-
 
     public void Initialize(Chunk chunk, World world)
     {
@@ -61,254 +50,265 @@ public class ChunkRenderer : MonoBehaviour
 
     public void GenerateMesh()
     {
-        // 1. Clear old data from the lists
         _vertices.Clear();
         _triangles.Clear();
         _uvs.Clear();
 
-        // 2. Loop through every block in the chunk
-        for (int y = 0; y < Chunk.ChunkHeight; y++)
+        // Loop 3 times (once for each axis: X, Y, Z)
+        for (int axis = 0; axis < 3; axis++)
         {
-            for (int x = 0; x < Chunk.ChunkWidth; x++)
+            int u = (axis + 1) % 3; // U-axis (width)
+            int v = (axis + 2) % 3; // V-axis (height)
+
+            // x is our 3D position vector
+            int[] x = { 0, 0, 0 };
+            // q is the direction we are sweeping in
+            int[] q = { 0, 0, 0 };
+            q[axis] = 1;
+
+            int sliceWidth = (u == 1) ? Chunk.ChunkHeight : Chunk.ChunkWidth;
+            int sliceHeight = (v == 1) ? Chunk.ChunkHeight : Chunk.ChunkWidth;
+
+            // This mask stores [BlockID, FaceDirection]
+            // We use two bytes per entry: [BlockID][FaceDir]
+            byte[] mask = new byte[sliceWidth * sliceHeight * 2];
+
+            // Sweep along the current axis
+            for (x[axis] = -1; x[axis] < ((axis == 1) ? Chunk.ChunkHeight : Chunk.ChunkWidth);)
             {
-                for (int z = 0; z < Chunk.ChunkDepth; z++)
+                int n = 0;
+                for (x[v] = 0; x[v] < sliceHeight; x[v]++)
                 {
-                    // Get the block type
-                    byte blockID = _chunkData.GetBlock(x, y, z);
-                    BlockType type = BlockDatabase.GetBlockType(blockID);
-
-                    // Skip this block if it's Air or not solid
-                    if (!type.IsSolid)
+                    for (x[u] = 0; x[u] < sliceWidth; x[u]++)
                     {
-                        continue;
+                        byte currentBlock = GetBlockID(x[0], x[1], x[2]);
+                        byte nextBlock = GetBlockID(x[0] + q[0], x[1] + q[1], x[2] + q[2]);
+
+                        bool isCurrentSolid = BlockDatabase.GetBlockType(currentBlock).IsSolid;
+                        bool isNextSolid = BlockDatabase.GetBlockType(nextBlock).IsSolid;
+
+                        // Check if we have a face
+                        if (isCurrentSolid == isNextSolid)
+                        {
+                            mask[n++] = 0; mask[n++] = 0; // No face
+                        }
+                        else if (isCurrentSolid)
+                        {
+                            mask[n++] = currentBlock;        // Store BlockID
+                            mask[n++] = (byte)((axis * 2) + 1); // Store "Front" Face Dir (e.g., +X, +Y, +Z)
+                        }
+                        else
+                        {
+                            mask[n++] = nextBlock;           // Store BlockID
+                            mask[n++] = (byte)((axis * 2) + 2); // Store "Back" Face Dir (e.g., -X, -Y, -Z)
+                        }
                     }
+                }
 
-                    // This is a solid block. Check its 6 neighbors.
+                x[axis]++; // Increment the sweep
 
-                    // Check Top (+Y)
-                    if (!IsNeighborSolid(x, y + 1, z))
-                        AddFace(BlockFace.Top, x, y, z, blockID);
+                // --- START THE GREEDY SEARCH ---
+                n = 0;
+                for (int j = 0; j < sliceHeight; j++)
+                {
+                    for (int i = 0; i < sliceWidth;)
+                    {
+                        byte blockID = mask[n];
+                        byte faceDir = mask[n + 1];
 
-                    // Check Bottom (-Y)
-                    if (!IsNeighborSolid(x, y - 1, z))
-                        AddFace(BlockFace.Bottom, x, y, z, blockID);
+                        if (faceDir != 0) // We found a face
+                        {
+                            // Find width (w)
+                            int w = 1;
+                            while (i + w < sliceWidth &&
+                                   mask[n + (w * 2)] == blockID &&
+                                   mask[n + (w * 2) + 1] == faceDir)
+                            {
+                                w++;
+                            }
 
-                    // Check Front (+Z)
-                    if (!IsNeighborSolid(x, y, z + 1))
-                        AddFace(BlockFace.Front, x, y, z, blockID);
+                            // Find height (h)
+                            int h = 1;
+                            bool done = false;
+                            while (j + h < sliceHeight)
+                            {
+                                for (int k = 0; k < w; k++)
+                                {
+                                    int index = (n + (k * 2)) + (h * sliceWidth * 2);
+                                    if (mask[index] != blockID || mask[index + 1] != faceDir)
+                                    {
+                                        done = true;
+                                        break;
+                                    }
+                                }
+                                if (done) break;
+                                h++;
+                            }
 
-                    // Check Back (-Z)
-                    if (!IsNeighborSolid(x, y, z - 1))
-                        AddFace(BlockFace.Back, x, y, z, blockID);
+                            // --- ADD THE QUAD ---
+                            x[u] = i;
+                            x[v] = j;
 
-                    // Check Right (+X)
-                    if (!IsNeighborSolid(x + 1, y, z))
-                        AddFace(BlockFace.Right, x, y, z, blockID);
+                            Vector3 du = Vector3.zero; du[u] = w;
+                            Vector3 dv = Vector3.zero; dv[v] = h;
 
-                    // Check Left (-X)
-                    if (!IsNeighborSolid(x - 1, y, z))
-                        AddFace(BlockFace.Left, x, y, z, blockID);
+                            Vector3 v1 = new Vector3(x[0], x[1], x[2]);
+                            Vector3 v2 = v1 + du;
+                            Vector3 v3 = v1 + du + dv;
+                            Vector3 v4 = v1 + dv;
+
+                            BlockType blockType = BlockDatabase.GetBlockType(blockID);
+                            BlockFace face = _dirToBlockFace[faceDir - 1]; // -1 to match 0-indexed array
+
+                            AddQuad(v1, v2, v3, v4, face, blockType, w, h, axis, faceDir);
+
+                            // --- UPDATE THE MASK ---
+                            for (int l = 0; l < h; l++)
+                            {
+                                for (int k = 0; k < w; k++)
+                                {
+                                    int index = (n + (k * 2)) + (l * sliceWidth * 2);
+                                    mask[index] = 0;
+                                    mask[index + 1] = 0;
+                                }
+                            }
+
+                            i += w;
+                            n += (w * 2);
+                        }
+                        else
+                        {
+                            i++;
+                            n += 2;
+                        }
+                    }
                 }
             }
         }
-
-        // 3. Apply the generated data to the Mesh
         ApplyMesh();
     }
 
-    private bool IsNeighborSolid(int x, int y, int z)
+    // (Helper method unchanged)
+    private byte GetBlockID(int x, int y, int z)
     {
-        // --- Y-Axis Bounds Check (Vertical) ---
-        if (y < 0) return true;
-        if (y >= Chunk.ChunkHeight) return false;
-
-        // --- X/Z-Axis Bounds Check (Horizontal) ---
+        if (y < 0 || y >= Chunk.ChunkHeight) return 0;
         if (x >= 0 && x < Chunk.ChunkWidth && z >= 0 && z < Chunk.ChunkDepth)
         {
-            byte neighborID = _chunkData.GetBlock(x, y, z);
-            return BlockDatabase.GetBlockType(neighborID).IsSolid;
+            return _chunkData.GetBlock(x, y, z);
         }
 
-        // --- IT'S OUTSIDE THIS CHUNK ---
         Vector3 worldPos = transform.position;
-
-        // Now find pos of the NEIGHBOR block
         int neighborWorldX = (int)worldPos.x + x;
-        int neighborWorldY = (int)worldPos.y + y;
         int neighborWorldZ = (int)worldPos.z + z;
-
         Chunk neighborChunk = _world.GetChunkFromWorldPos(new Vector3(neighborWorldX, 0, neighborWorldZ));
+        if (neighborChunk == null) return 0;
 
-        // If the neighbor chunk isn't loaded, it's "air"
-        if (neighborChunk == null)
-        {
-            return false;
-        }
-
-        //Find the local coords *within that chunk*
-
-        int localX = x;
-        int localZ = z;
-
-        if (x < 0) localX = Chunk.ChunkWidth + x; // -1 + 16 = 15
-        else if (x >= Chunk.ChunkWidth) localX = x - Chunk.ChunkWidth; // 16 - 16 = 0
-
-        if (z < 0) localZ = Chunk.ChunkDepth + z;
-        else if (z >= Chunk.ChunkDepth) localZ = z - Chunk.ChunkDepth;
-
-
-
-        // Finally, get the block from the neighbor chunk
-        byte neighborBlockID = neighborChunk.GetBlock(localX, y, localZ);
-        return BlockDatabase.GetBlockType(neighborBlockID).IsSolid;
+        int localX = (x + Chunk.ChunkWidth) % Chunk.ChunkWidth;
+        int localZ = (z + Chunk.ChunkDepth) % Chunk.ChunkDepth;
+        return neighborChunk.GetBlock(localX, y, localZ);
     }
 
-    private void AddFace(BlockFace face, int x, int y, int z, byte blockID)
+    /// <summary>
+    /// --- THIS IS THE FINAL, CORRECTED AddQuad METHOD ---
+    /// </summary>
+    private void AddQuad(Vector3 v1, Vector3 v2, Vector3 v3, Vector3 v4,
+                         BlockFace face, BlockType type, int w, int h, int axis, int faceDir)
     {
-        // 1. Get the BlockType
-        BlockType type = BlockDatabase.GetBlockType(blockID);
+        int vIndex = _vertices.Count;
 
-        // 2. Get the texture coordinates for this face
-        TextureAtlasCoord texCoord = type.GetTextureCoords(face);
-        if (texCoord == null)
+        // --- Winding Order (This was correct) ---
+        bool isFrontFace = (faceDir % 2 != 0);
+
+        // Add vertices
+        _vertices.Add(v1); // v1 (index 0)
+        _vertices.Add(v2); // v2 (index 1)
+        _vertices.Add(v3); // v3 (index 2)
+        _vertices.Add(v4); // v4 (index 3)
+
+        // Add triangles with correct winding order
+        // This is the winding order from the version that "fixed the orientation"
+        if (isFrontFace)
         {
-            Debug.LogError($"BlockType {type.name} has null texture coords for face {face}");
-            return; // Stop this face from rendering
+            // Clockwise for +X, +Y, +Z
+            // (0, 1, 2) -> (v1, v2, v3)
+            // (0, 2, 3) -> (v1, v3, v4)
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 1);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 3);
         }
+        else
+        {
+            // Clockwise for -X, -Y, -Z
+            // (0, 3, 2) -> (v1, v4, v3)
+            // (0, 2, 1) -> (v1, v3, v2)
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 3);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 0);
+            _triangles.Add(vIndex + 2);
+            _triangles.Add(vIndex + 1);
+        }
+
+        // --- FIX #2: Correct UV Mapping ---
+        // This is the UV logic from the version that fixed the "rotated" textures
+        TextureAtlasCoord texCoord = type.GetTextureCoords(face);
         Vector2[] uvs = TextureAtlasManager.GetUVs(texCoord);
 
-        // 3. Get the starting vertex index
-        int vIndex = _vertices.Count;
-        Vector3 blockPosition = new Vector3(x, y, z);
+        Vector2 uv0 = uvs[0]; // Bottom-Left
+        Vector2 uv1 = uvs[1]; // Top-Left
+        Vector2 uv2 = uvs[2]; // Top-Right
 
-        // 4. Add vertices and UVs based on face
+        float uvWidth = uv2.x - uv0.x;
+        float uvHeight = uv1.y - uv0.y;
 
-        switch (face)
+        int texWidth = w;
+        int texHeight = h;
+
+        // axis 0 = X (Left/Right)
+        // axis 1 = Y (Top/Bottom)
+        // axis 2 = Z (Front/Back)
+
+        // This logic correctly maps the greedy w/h to the texture's U/V
+        if (axis == 1) // Y-axis face (Top/Bottom)
         {
-            case BlockFace.Top:
-                _vertices.Add(_topFaceVertices[0] + blockPosition);
-                _vertices.Add(_topFaceVertices[1] + blockPosition);
-                _vertices.Add(_topFaceVertices[2] + blockPosition);
-                _vertices.Add(_topFaceVertices[3] + blockPosition);
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[0]); // Bottom-Left
-                _uvs.Add(uvs[3]); // Bottom-Right
-                _uvs.Add(uvs[2]); // Top-Right
-
-                _triangles.Add(vIndex + 0);
-                _triangles.Add(vIndex + 1);
-                _triangles.Add(vIndex + 2);
-                _triangles.Add(vIndex + 0);
-                _triangles.Add(vIndex + 2);
-                _triangles.Add(vIndex + 3);
-                break;
-
-            case BlockFace.Bottom:
-                _vertices.Add(_bottomFaceVertices[0] + blockPosition);
-                _vertices.Add(_bottomFaceVertices[1] + blockPosition);
-                _vertices.Add(_bottomFaceVertices[2] + blockPosition);
-                _vertices.Add(_bottomFaceVertices[3] + blockPosition);
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[0]); // Bottom-Left
-                _uvs.Add(uvs[3]); // Bottom-Right
-                _uvs.Add(uvs[2]); // Top-Right
-
-                _triangles.Add(vIndex + _faceTriangles[0]);
-                _triangles.Add(vIndex + _faceTriangles[1]);
-                _triangles.Add(vIndex + _faceTriangles[2]);
-                _triangles.Add(vIndex + _faceTriangles[3]);
-                _triangles.Add(vIndex + _faceTriangles[4]);
-                _triangles.Add(vIndex + _faceTriangles[5]);
-                break;
-
-            case BlockFace.Front:
-                _vertices.Add(_frontFaceVertices[0] + blockPosition);
-                _vertices.Add(_frontFaceVertices[1] + blockPosition);
-                _vertices.Add(_frontFaceVertices[2] + blockPosition);
-                _vertices.Add(_frontFaceVertices[3] + blockPosition);
-                _uvs.Add(uvs[0]); // Bottom-Left
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[2]); // Top-Right
-                _uvs.Add(uvs[3]); // Bottom-Right
-
-                _triangles.Add(vIndex + _faceTriangles[0]);
-                _triangles.Add(vIndex + _faceTriangles[1]);
-                _triangles.Add(vIndex + _faceTriangles[2]);
-                _triangles.Add(vIndex + _faceTriangles[3]);
-                _triangles.Add(vIndex + _faceTriangles[4]);
-                _triangles.Add(vIndex + _faceTriangles[5]);
-                break;
-
-            case BlockFace.Back:
-                _vertices.Add(_backFaceVertices[0] + blockPosition);
-                _vertices.Add(_backFaceVertices[1] + blockPosition);
-                _vertices.Add(_backFaceVertices[2] + blockPosition);
-                _vertices.Add(_backFaceVertices[3] + blockPosition);
-                _uvs.Add(uvs[3]); // Bottom-Right
-                _uvs.Add(uvs[2]); // Top-Right
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[0]); // Bottom-Left
-
-                _triangles.Add(vIndex + _faceTriangles[0]);
-                _triangles.Add(vIndex + _faceTriangles[1]);
-                _triangles.Add(vIndex + _faceTriangles[2]);
-                _triangles.Add(vIndex + _faceTriangles[3]);
-                _triangles.Add(vIndex + _faceTriangles[4]);
-                _triangles.Add(vIndex + _faceTriangles[5]);
-                break;
-
-            case BlockFace.Right:
-                _vertices.Add(_rightFaceVertices[0] + blockPosition);
-                _vertices.Add(_rightFaceVertices[1] + blockPosition);
-                _vertices.Add(_rightFaceVertices[2] + blockPosition);
-                _vertices.Add(_rightFaceVertices[3] + blockPosition);
-                _uvs.Add(uvs[0]); // Bottom-Left
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[2]); // Top-Right
-                _uvs.Add(uvs[3]); // Bottom-Right
-
-                _triangles.Add(vIndex + _faceTriangles[0]);
-                _triangles.Add(vIndex + _faceTriangles[1]);
-                _triangles.Add(vIndex + _faceTriangles[2]);
-                _triangles.Add(vIndex + _faceTriangles[3]);
-                _triangles.Add(vIndex + _faceTriangles[4]);
-                _triangles.Add(vIndex + _faceTriangles[5]);
-                break;
-
-            case BlockFace.Left:
-                _vertices.Add(_leftFaceVertices[0] + blockPosition);
-                _vertices.Add(_leftFaceVertices[1] + blockPosition);
-                _vertices.Add(_leftFaceVertices[2] + blockPosition);
-                _vertices.Add(_leftFaceVertices[3] + blockPosition);
-                _uvs.Add(uvs[3]); // Bottom-Right
-                _uvs.Add(uvs[2]); // Top-Right
-                _uvs.Add(uvs[1]); // Top-Left
-                _uvs.Add(uvs[0]); // Bottom-Left
-
-                _triangles.Add(vIndex + _faceTriangles[0]);
-                _triangles.Add(vIndex + _faceTriangles[1]);
-                _triangles.Add(vIndex + _faceTriangles[2]);
-                _triangles.Add(vIndex + _faceTriangles[3]);
-                _triangles.Add(vIndex + _faceTriangles[4]);
-                _triangles.Add(vIndex + _faceTriangles[5]);
-                break;
+            texWidth = h;
+            texHeight = w;
         }
-    }
+        else if (axis == 0) // X-axis face (Left/Right)
+        {
+            texWidth = h;
+            texHeight = w;
+        }
+        // else axis 2 (Z-axis, Front/Back), UVs are correct (w=X, h=Y)
 
+        // Calculate the four tiled UV coordinates
+        Vector2 uv_v1 = new Vector2(uv0.x, uv0.y);
+        Vector2 uv_v2 = new Vector2(uv0.x + (uvWidth * texWidth), uv0.y);
+        Vector2 uv_v3 = new Vector2(uv0.x + (uvWidth * texWidth), uv0.y + (uvHeight * texHeight));
+        Vector2 uv_v4 = new Vector2(uv0.x, uv0.y + (uvHeight * texHeight));
+
+        // Add UVs in the correct order to match the vertices
+        // This is the part that was broken before.
+        // Now it matches the vertex order v1, v2, v3, v4
+        _uvs.Add(uv_v1); // for v1
+        _uvs.Add(uv_v2); // for v2
+        _uvs.Add(uv_v3); // for v3
+        _uvs.Add(uv_v4); // for v4
+    }
+    // (Unchanged)
     private void ApplyMesh()
     {
         if (_vertices.Count != _uvs.Count)
-        {
-            Debug.LogError($"Vertex ({_vertices.Count}) and UV ({_uvs.Count}) count MISMATCH. Mesh will be black/broken.");
-        }
+            Debug.LogError($"Vertex ({_vertices.Count}) and UV ({_uvs.Count}) count MISMATCH.");
 
         _mesh.Clear();
         _mesh.SetVertices(_vertices);
         _mesh.SetTriangles(_triangles, 0);
         _mesh.SetUVs(0, _uvs);
-
         _mesh.RecalculateNormals();
-
         _meshCollider.sharedMesh = null;
         _meshCollider.sharedMesh = _mesh;
     }
