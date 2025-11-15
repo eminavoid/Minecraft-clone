@@ -144,11 +144,12 @@ public class ChunkRenderer : MonoBehaviour
 
         switch (face)
         {
-            case BlockFace.Top: // +Y (La que funcionaba)
+            case BlockFace.Top: // +Y (Esta funciona)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 0)); // Back-Left (0)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 1)); // Front-Left (1)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 1)); // Front-Right (2)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 0)); // Back-Right (3)
+                // (0, 1, 2) (0, 2, 3) - Clockwise
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 1); _triangles.Add(vIndex + 2);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 3);
                 _uvs.Add(uvs[1]); _uvs.Add(uvs[0]); _uvs.Add(uvs[3]); _uvs.Add(uvs[2]);
@@ -159,9 +160,13 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(0, 0, 0)); // Back-Left (1)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 0)); // Back-Right (2)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 1)); // Front-Right (3)
-                // Winding Invertido
-                _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
-                _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
+
+                // --- ¡ESTE ES EL FIX! ---
+                // El orden (0, 1, 2) (0, 2, 3) es el correcto para ser visto desde abajo.
+                _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 1); _triangles.Add(vIndex + 2);
+                _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 3);
+                // --- FIN DEL FIX ---
+
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
                 break;
 
@@ -170,7 +175,7 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(0, 1, 1)); // Top-Left (1)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 1)); // Top-Right (2)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 1)); // Bottom-Right (3)
-                // Winding Invertido
+                // (0, 2, 1) (0, 3, 2) - Clockwise
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
@@ -181,7 +186,7 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(1, 1, 0)); // Top-Right (1)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 0)); // Top-Left (2)
                 _vertices.Add(blockPosition + new Vector3(0, 0, 0)); // Bottom-Left (3)
-                // Winding Invertido
+                // (0, 2, 1) (0, 3, 2) - Clockwise
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
@@ -192,7 +197,7 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(1, 1, 1)); // Front-Top (1)
                 _vertices.Add(blockPosition + new Vector3(1, 1, 0)); // Back-Top (2)
                 _vertices.Add(blockPosition + new Vector3(1, 0, 0)); // Back-Bottom (3)
-                // Winding Invertido
+                // (0, 2, 1) (0, 3, 2) - Clockwise
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);
@@ -203,7 +208,7 @@ public class ChunkRenderer : MonoBehaviour
                 _vertices.Add(blockPosition + new Vector3(0, 1, 0)); // Back-Top (1)
                 _vertices.Add(blockPosition + new Vector3(0, 1, 1)); // Front-Top (2)
                 _vertices.Add(blockPosition + new Vector3(0, 0, 1)); // Front-Bottom (3)
-                // Winding Invertido
+                // (0, 2, 1) (0, 3, 2) - Clockwise
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 2); _triangles.Add(vIndex + 1);
                 _triangles.Add(vIndex + 0); _triangles.Add(vIndex + 3); _triangles.Add(vIndex + 2);
                 _uvs.Add(uvs[0]); _uvs.Add(uvs[1]); _uvs.Add(uvs[2]); _uvs.Add(uvs[3]);

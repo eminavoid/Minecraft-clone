@@ -15,6 +15,13 @@ public class World : MonoBehaviour
     [SerializeField] private int _worldSeed = 12345;
     [SerializeField] private int _viewDistance = 8;
 
+    [Header("Game Tick Settings")]
+    [Tooltip("How many times per second the game logic updates (e.g., 20)")]
+    [SerializeField] private float _gameTickRate = 20.0f;
+
+    private float _tickInterval; // (e.g., 1.0f / 20.0f = 0.05s)
+    private float _tickTimer;
+
     [Header("Generator Settings")]
     [SerializeField] private float _noiseScale = 0.05f;
     [SerializeField] private int _baseTerrainHeight = 60;
@@ -26,7 +33,7 @@ public class World : MonoBehaviour
     private Vector2Int _currentPlayerChunk;
     private bool _playerHasSpawned = false;
 
-    // --- Diccionarios y Colas (Single-Threaded) ---
+    // --- Colas (Single-Threaded) ---
     private Dictionary<Vector2Int, Chunk> _chunkDataDictionary = new Dictionary<Vector2Int, Chunk>();
     private Dictionary<Vector2Int, GameObject> _chunkObjectDictionary = new Dictionary<Vector2Int, GameObject>();
 
@@ -58,11 +65,69 @@ public class World : MonoBehaviour
 
     private void Start()
     {
+        // 1. Configurar el timer del tick
+        _tickInterval = 1.0f / _gameTickRate;
+        _tickTimer = 0.0f;
+
+        // 2. Obtener la posición inicial (no cargamos chunks todavía)
         _currentPlayerChunk = GetChunkCoordsFromPosition(_playerController.transform.position);
+
+        // 3. Forzar la primera carga de chunks en el primer tick
         UpdateLoadedChunks();
     }
 
+    /// <summary>
+    /// --- MÉTODO UPDATE() ACTUALIZADO ---
+    /// Se ejecuta tan rápido como puede (Renderizado).
+    /// </summary>
     private void Update()
+    {
+        // --- 1. Acumulador de tiempo para el Game Tick ---
+        _tickTimer += Time.deltaTime;
+
+        // Si el juego se lagea (ej. 0.5s), esto correrá
+        // múltiples ticks (0.5 / 0.05 = 10 ticks) para "ponerse al día".
+        while (_tickTimer >= _tickInterval)
+        {
+            _tickTimer -= _tickInterval;
+            Tick(); // Corre nuestra lógica de juego a 20Hz
+        }
+
+        // --- 2. Procesar UNA tarea de la cola por frame ---
+        // Esto reparte el "pico de lag" a través de múltiples frames.
+        if (_chunksToLoad.Count > 0)
+        {
+            Vector2Int coordsToLoad = _chunksToLoad[0];
+            _chunksToLoad.RemoveAt(0);
+            LoadChunk(coordsToLoad);
+        }
+        else if (_chunksToUnload.Count > 0)
+        {
+            Vector2Int coordsToUnload = _chunksToUnload[0];
+            _chunksToUnload.RemoveAt(0);
+            UnloadChunk(coordsToUnload);
+        }
+        else if (_chunksToUpdate.Count > 0)
+        {
+            Vector2Int coordsToUpdate = _chunksToUpdate[0];
+            _chunksToUpdate.RemoveAt(0);
+
+            // Realiza la actualización de la malla
+            if (_chunkObjectDictionary.TryGetValue(coordsToUpdate, out GameObject chunkObject))
+            {
+                if (chunkObject != null)
+                {
+                    chunkObject.GetComponent<ChunkRenderer>().GenerateMesh();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// --- ¡NUEVO MÉTODO! ---
+    /// Se ejecuta a una velocidad fija (Lógica de Juego, 20Hz).
+    /// </summary>
+    private void Tick()
     {
         // --- 1. Revisar movimiento del jugador ---
         Vector2Int playerChunk = GetChunkCoordsFromPosition(_playerController.transform.position);
@@ -72,55 +137,39 @@ public class World : MonoBehaviour
             UpdateLoadedChunks();
         }
 
-        // --- 2. Procesar colas (1 por frame) ---
-        if (_chunksToLoad.Count > 0)
-        {
-            // Cargar un chunk
-            Vector2Int coordsToLoad = _chunksToLoad[0];
-            _chunksToLoad.RemoveAt(0);
-            LoadChunk(coordsToLoad);
-        }
-        else if (_chunksToUnload.Count > 0)
-        {
-            // Descargar un chunk
-            Vector2Int coordsToUnload = _chunksToUnload[0];
-            _chunksToUnload.RemoveAt(0);
-            UnloadChunk(coordsToUnload);
-        }
-        else if (_chunksToUpdate.Count > 0)
-        {
-            // Actualizar un chunk
-            Vector2Int coordsToUpdate = _chunksToUpdate[0];
-            _chunksToUpdate.RemoveAt(0);
-            UpdateChunk(coordsToUpdate);
-        }
+        // --- 2. Futura Lógica de Juego ---
+        // UpdateMobs();
+        // UpdateBlockTicks();
+        // GrowPlants();
     }
 
-    /// <summary>
-    /// --- MÉTODO DE CARGA SIMPLE (Hilo Principal) ---
-    /// </summary>
+    //
+    // --- EL RESTO DE TUS MÉTODOS (LoadChunk, UnloadChunk, etc.) ---
+    // --- NO NECESITAN CAMBIOS ---
+    //
+
     private void LoadChunk(Vector2Int chunkCoords)
     {
-        if (IsChunkLoaded(chunkCoords)) return; // Ya está cargado
+        if (IsChunkLoaded(chunkCoords)) return;
 
-        // --- 1. Generar Datos (CPU Pesado) ---
+        // 1. Generar Datos
         Chunk newChunkData = new Chunk();
-        float[,] noiseMap = _generator.GetNoiseMap(chunkCoords); // Rápido
-        _generator.GenerateChunk(newChunkData, noiseMap); // Lento
+        float[,] noiseMap = _generator.GetNoiseMap(chunkCoords);
+        _generator.GenerateChunk(newChunkData, noiseMap);
         _chunkDataDictionary.Add(chunkCoords, newChunkData);
 
-        // --- 2. Crear GameObject ---
+        // 2. Crear GameObject
         GameObject chunkObject = CreateChunkObject(chunkCoords);
         _chunkObjectDictionary.Add(chunkCoords, chunkObject);
 
-        // --- 3. Generar Malla (CPU Muy Pesado) ---
+        // 3. Generar Malla (¡Pico de Lag!)
         ChunkRenderer renderer = chunkObject.GetComponent<ChunkRenderer>();
-        renderer.Initialize(newChunkData, this); // ¡Esto causa el lag!
+        renderer.Initialize(newChunkData, this);
 
-        // --- 4. Actualizar Vecinos ---
+        // 4. Actualizar Vecinos
         UpdateNeighbors(chunkCoords);
 
-        // --- 5. Spawmear Jugador ---
+        // 5. Spawnear Jugador
         if (chunkCoords == Vector2Int.zero && !_playerHasSpawned)
         {
             SpawnPlayer(newChunkData, Vector2Int.zero);
@@ -136,6 +185,9 @@ public class World : MonoBehaviour
             chunkCoords.x * Chunk.ChunkWidth, 0, chunkCoords.y * Chunk.ChunkDepth
         );
         chunkObject.transform.SetParent(this.transform);
+
+        chunkObject.layer = LayerMask.NameToLayer("World");
+
         chunkObject.AddComponent<ChunkRenderer>();
         chunkObject.GetComponent<MeshRenderer>().material = _worldMaterial;
         return chunkObject;
@@ -186,9 +238,6 @@ public class World : MonoBehaviour
         UpdateNeighbors(chunkCoords);
     }
 
-    /// <summary>
-    /// Pone en cola a un chunk para ser reconstruido.
-    /// </summary>
     private void UpdateChunk(Vector2Int chunkCoords)
     {
         if (IsChunkLoaded(chunkCoords) && !_chunksToUpdate.Contains(chunkCoords))
@@ -197,7 +246,7 @@ public class World : MonoBehaviour
         }
     }
 
-    // --- (Mantén tus otros métodos: GetChunkData, IsChunkLoaded, etc.) ---
+    // --- Métodos Helper (Sin cambios) ---
 
     public Chunk GetChunkData(Vector2Int chunkCoords)
     {
@@ -249,5 +298,82 @@ public class World : MonoBehaviour
         UpdateChunk(new Vector2Int(chunkCoords.x, chunkCoords.y - 1));
         UpdateChunk(new Vector2Int(chunkCoords.x + 1, chunkCoords.y));
         UpdateChunk(new Vector2Int(chunkCoords.x - 1, chunkCoords.y));
+    }
+
+    /// <summary>
+    /// Obtiene el ID de un bloque en una posición del mundo.
+    /// (Útil para futuras mecánicas de juego)
+    /// </summary>
+    public byte GetBlock(Vector3 worldPos)
+    {
+        Vector2Int chunkCoords = GetChunkCoordsFromPosition(worldPos);
+
+        if (!IsChunkLoaded(chunkCoords))
+        {
+            return 0; // Si el chunk no está cargado, es aire
+        }
+
+        Chunk chunk = GetChunkData(chunkCoords);
+
+        // Convertir la posición del mundo a posición local del chunk
+        int localX = (int)worldPos.x % Chunk.ChunkWidth;
+        int localY = (int)worldPos.y;
+        int localZ = (int)worldPos.z % Chunk.ChunkDepth;
+
+        // Ajustar para coordenadas negativas
+        if (localX < 0) localX += Chunk.ChunkWidth;
+        if (localZ < 0) localZ += Chunk.ChunkDepth;
+
+        return chunk.GetBlock(localX, localY, localZ);
+    }
+
+    /// <summary>
+    /// Establece un bloque en el mundo y actualiza los chunks afectados.
+    /// </summary>
+    public void SetBlock(Vector3 worldPos, byte blockID)
+    {
+        // 1. Encontrar el chunk
+        Vector2Int chunkCoords = GetChunkCoordsFromPosition(worldPos);
+
+        if (!IsChunkLoaded(chunkCoords))
+        {
+            // No podemos modificar un chunk que no está cargado
+            return;
+        }
+
+        Chunk chunk = GetChunkData(chunkCoords);
+
+        // 2. Convertir a coordenadas locales
+        int localX = (int)worldPos.x % Chunk.ChunkWidth;
+        int localY = (int)worldPos.y;
+        int localZ = (int)worldPos.z % Chunk.ChunkDepth;
+
+        if (localX < 0) localX += Chunk.ChunkWidth;
+        if (localY < 0 || localY >= Chunk.ChunkHeight) return; // Fuera de altura
+        if (localZ < 0) localZ += Chunk.ChunkDepth;
+
+        // 3. Establecer el bloque en los datos
+        chunk.SetBlock(localX, localY, localZ, blockID);
+
+        // 4. Poner este chunk en la cola de actualización
+        // (El método UpdateChunk ya previene duplicados)
+        UpdateChunk(chunkCoords);
+
+        // 5. ¡Importante! Revisar si el bloque está en un borde
+        // Si es así, también debemos actualizar al vecino.
+
+        if (localX == 0)
+            UpdateChunk(new Vector2Int(chunkCoords.x - 1, chunkCoords.y));
+        if (localX == Chunk.ChunkWidth - 1)
+            UpdateChunk(new Vector2Int(chunkCoords.x + 1, chunkCoords.y));
+        if (localZ == 0)
+            UpdateChunk(new Vector2Int(chunkCoords.x, chunkCoords.y - 1));
+        if (localZ == Chunk.ChunkDepth - 1)
+            UpdateChunk(new Vector2Int(chunkCoords.x, chunkCoords.y + 1));
+    }
+
+    public Texture2D GetWorldAtlasTexture()
+    {
+        return _textureAtlas;
     }
 }

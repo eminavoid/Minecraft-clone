@@ -69,4 +69,24 @@ public static class TextureAtlasManager
 
         return newUVs; // <-- Retorna el nuevo array
     }
+
+    /// <summary>
+    /// --- ¡NUEVO MÉTODO! ---
+    /// Obtiene el Rect (de 0 a 1) para un RawImage.uvRect
+    /// </summary>
+    public static Rect GetUVRect(TextureAtlasCoord coord)
+    {
+        if (_atlasWidthInTiles == 0)
+        {
+            Debug.LogError("TextureAtlasManager not initialized!");
+            return new Rect(0, 0, 1, 1);
+        }
+
+        float x = coord.X * _normalizedTileWidth;
+        float y = 1.0f - (coord.Y + 1) * _normalizedTileHeight;
+        float w = _normalizedTileWidth;
+        float h = _normalizedTileHeight;
+
+        return new Rect(x, y, w, h);
+    }
 }
