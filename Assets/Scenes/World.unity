@@ -237,7 +237,7 @@ MonoBehaviour:
   _textureAtlas: {fileID: 2800000, guid: 4edc13c239465364aad469da0b56bcfb, type: 3}
   _tileSize: 16
   _worldSeed: 12345
-  _viewDistance: 2
+  _viewDistance: 5
   _gameTickRate: 20
   _noiseScale: 0.02
   _baseTerrainHeight: 60
