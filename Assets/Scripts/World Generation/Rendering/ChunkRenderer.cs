@@ -47,6 +47,28 @@ public class ChunkRenderer : MonoBehaviour
         return false;
     }
 
+    public void GetMeshStats(out int vertexCount, out int triangleCount, out int activeSections)
+    {
+        vertexCount = 0;
+        triangleCount = 0;
+        activeSections = 0;
+
+        if (_sections == null)
+            return;
+
+        for (int i = 0; i < _sections.Length; i++)
+        {
+            ChunkSectionRenderer section = _sections[i];
+            if (section == null || !section.HasMesh)
+                continue;
+
+            section.GetMeshStats(out int sectionVerts, out int sectionTris);
+            vertexCount += sectionVerts;
+            triangleCount += sectionTris;
+            activeSections++;
+        }
+    }
+
     public void ApplyRenderData(ChunkRenderData renderData)
     {
         if (renderData == null)

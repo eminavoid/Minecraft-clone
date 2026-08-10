@@ -38,6 +38,7 @@ public class World : MonoBehaviour
         public NativeList<float3>[] VerticesBySection;
         public NativeList<int>[] TrianglesBySection;
         public NativeList<float2>[] UVsBySection;
+        public NativeList<float2>[] UV1sBySection;
         public bool Disposed;
 
         public void CompleteAndDispose()
@@ -65,6 +66,7 @@ public class World : MonoBehaviour
                     if (VerticesBySection[i].IsCreated) VerticesBySection[i].Dispose();
                     if (TrianglesBySection[i].IsCreated) TrianglesBySection[i].Dispose();
                     if (UVsBySection[i].IsCreated) UVsBySection[i].Dispose();
+                    if (UV1sBySection[i].IsCreated) UV1sBySection[i].Dispose();
                 }
             }
         }
@@ -117,6 +119,7 @@ public class World : MonoBehaviour
     private byte _grassID;
     private byte _dirtID;
     private byte _stoneID;
+    private Material _runtimeWorldMaterial;
 
     private Vector2Int _currentPlayerChunk;
     private int _currentPlayerSection;
@@ -158,6 +161,7 @@ public class World : MonoBehaviour
         }
         _blockDatabase.Initialize();
         BurstBlockData.Initialize();
+        ConfigureGreedyAtlasMaterial();
 
         _airID = BlockDatabase.GetBlockType("Air").BlockID;
         _grassID = BlockDatabase.GetBlockType("Grass").BlockID;
@@ -172,6 +176,37 @@ public class World : MonoBehaviour
             _colliderSectionRadius = 0;
     }
 
+    private void ConfigureGreedyAtlasMaterial()
+    {
+        if (_worldMaterial == null)
+            return;
+
+        Shader greedyShader = Shader.Find("MinecraftClone/AtlasGreedy");
+        if (greedyShader == null)
+        {
+            Debug.LogWarning("World: AtlasGreedy shader not found. Falling back to assigned material.");
+            _runtimeWorldMaterial = _worldMaterial;
+            return;
+        }
+
+        // Instance so we don't dirty the shared material asset in the project.
+        _runtimeWorldMaterial = new Material(greedyShader);
+        _runtimeWorldMaterial.name = _worldMaterial.name + " (Greedy Runtime)";
+        _runtimeWorldMaterial.SetTexture("_BaseMap", _textureAtlas);
+        _runtimeWorldMaterial.SetVector(
+            "_TileSize",
+            new Vector4(
+                TextureAtlasManager.NormalizedTileWidth,
+                TextureAtlasManager.NormalizedTileHeight,
+                0f,
+                0f));
+    }
+
+    private Material GetWorldMaterial()
+    {
+        return _runtimeWorldMaterial != null ? _runtimeWorldMaterial : _worldMaterial;
+    }
+
     private void Start()
     {
         _tickInterval = 1.0f / _gameTickRate;
@@ -179,6 +214,9 @@ public class World : MonoBehaviour
         _currentPlayerChunk = GetChunkCoordsFromPosition(_playerController.transform.position);
         _currentPlayerSection = GetPlayerSection();
         UpdateLoadedChunks();
+
+        if (FindFirstObjectByType<PerformanceOverlay>() == null)
+            gameObject.AddComponent<PerformanceOverlay>();
     }
 
     private void OnDestroy()
@@ -194,6 +232,9 @@ public class World : MonoBehaviour
         _activeMeshJobs.Clear();
 
         BurstBlockData.Dispose();
+
+        if (_runtimeWorldMaterial != null && _runtimeWorldMaterial != _worldMaterial)
+            Destroy(_runtimeWorldMaterial);
     }
 
     private void Update()
@@ -349,7 +390,8 @@ public class World : MonoBehaviour
                 NeighborNegX = CopyNeighborOrEmpty(new Vector2Int(coords.x - 1, coords.y)),
                 VerticesBySection = new NativeList<float3>[ChunkSection.CountY],
                 TrianglesBySection = new NativeList<int>[ChunkSection.CountY],
-                UVsBySection = new NativeList<float2>[ChunkSection.CountY]
+                UVsBySection = new NativeList<float2>[ChunkSection.CountY],
+                UV1sBySection = new NativeList<float2>[ChunkSection.CountY]
             };
 
             chunkData.CopyTo(state.Blocks);
@@ -363,6 +405,7 @@ public class World : MonoBehaviour
                 state.VerticesBySection[section] = new NativeList<float3>(256, Allocator.Persistent);
                 state.TrianglesBySection[section] = new NativeList<int>(384, Allocator.Persistent);
                 state.UVsBySection[section] = new NativeList<float2>(256, Allocator.Persistent);
+                state.UV1sBySection[section] = new NativeList<float2>(256, Allocator.Persistent);
 
                 MeshSectionJob meshJob = new MeshSectionJob
                 {
@@ -379,7 +422,8 @@ public class World : MonoBehaviour
                     NormalizedTileHeight = BurstBlockData.NormalizedTileHeight,
                     Vertices = state.VerticesBySection[section],
                     Triangles = state.TrianglesBySection[section],
-                    UVs = state.UVsBySection[section]
+                    UVs = state.UVsBySection[section],
+                    UV1s = state.UV1sBySection[section]
                 };
 
                 handles.Add(meshJob.Schedule());
@@ -456,7 +500,8 @@ public class World : MonoBehaviour
                         section,
                         state.VerticesBySection[section],
                         state.TrianglesBySection[section],
-                        state.UVsBySection[section]));
+                        state.UVsBySection[section],
+                        state.UV1sBySection[section]));
                 }
 
                 _pendingMeshUploads.Add(new ChunkRenderData(state.Coords, state.SectionMask, sections));
@@ -490,7 +535,7 @@ public class World : MonoBehaviour
             _chunkObjectDictionary.Add(coords, chunkObject);
 
             ChunkRenderer newRenderer = chunkObject.GetComponent<ChunkRenderer>();
-            newRenderer.Initialize(_chunkDataDictionary[coords], this, _worldMaterial);
+            newRenderer.Initialize(_chunkDataDictionary[coords], this, GetWorldMaterial());
         }
 
         ChunkRenderer renderer = chunkObject.GetComponent<ChunkRenderer>();
@@ -859,6 +904,31 @@ public class World : MonoBehaviour
     public bool IsChunkLoaded(Vector2Int chunkCoords)
     {
         return _chunkDataDictionary.ContainsKey(chunkCoords);
+    }
+
+    public int LoadedChunkCount => _chunkObjectDictionary.Count;
+
+    public void GetRenderStats(out int chunks, out int activeSections, out int vertices, out int triangles)
+    {
+        chunks = _chunkObjectDictionary.Count;
+        activeSections = 0;
+        vertices = 0;
+        triangles = 0;
+
+        foreach (KeyValuePair<Vector2Int, GameObject> pair in _chunkObjectDictionary)
+        {
+            if (pair.Value == null)
+                continue;
+
+            ChunkRenderer renderer = pair.Value.GetComponent<ChunkRenderer>();
+            if (renderer == null)
+                continue;
+
+            renderer.GetMeshStats(out int chunkVerts, out int chunkTris, out int chunkSections);
+            vertices += chunkVerts;
+            triangles += chunkTris;
+            activeSections += chunkSections;
+        }
     }
 
     public Vector2Int GetChunkCoordsFromPosition(Vector3 position)

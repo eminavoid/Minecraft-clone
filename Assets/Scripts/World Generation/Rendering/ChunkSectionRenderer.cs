@@ -16,6 +16,18 @@ public class ChunkSectionRenderer : MonoBehaviour
     public bool HasMesh => _hasMesh;
     public bool HasCollider => _hasCollider;
 
+    public void GetMeshStats(out int vertexCount, out int triangleCount)
+    {
+        vertexCount = 0;
+        triangleCount = 0;
+
+        if (!_hasMesh || _mesh == null)
+            return;
+
+        vertexCount = _mesh.vertexCount;
+        triangleCount = _mesh.triangles.Length / 3;
+    }
+
     public void Initialize(int sectionIndex, Material material, int worldLayer)
     {
         _sectionIndex = sectionIndex;
@@ -50,10 +62,10 @@ public class ChunkSectionRenderer : MonoBehaviour
             return;
         }
 
-        if (data.Vertices.Length != data.UVs.Length)
+        if (data.Vertices.Length != data.UVs.Length || data.Vertices.Length != data.UV1s.Length)
         {
             Debug.LogError(
-                $"ChunkSectionRenderer: Vertex ({data.Vertices.Length}) and UV ({data.UVs.Length}) mismatch.");
+                $"ChunkSectionRenderer: Vertex/UV mismatch (v={data.Vertices.Length}, uv0={data.UVs.Length}, uv1={data.UV1s.Length}).");
             return;
         }
 
@@ -61,6 +73,7 @@ public class ChunkSectionRenderer : MonoBehaviour
         _mesh.SetVertices(data.Vertices);
         _mesh.SetTriangles(data.Triangles, 0);
         _mesh.SetUVs(0, data.UVs);
+        _mesh.SetUVs(1, data.UV1s);
         _mesh.RecalculateNormals();
         _mesh.RecalculateBounds();
         _hasMesh = true;
