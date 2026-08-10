@@ -69,7 +69,7 @@ public class World : MonoBehaviour
         _tickInterval = 1.0f / _gameTickRate;
         _tickTimer = 0.0f;
 
-        // 2. Obtener la posición inicial (no cargamos chunks todavía)
+        // 2. Obtener la posiciï¿½n inicial (no cargamos chunks todavï¿½a)
         _currentPlayerChunk = GetChunkCoordsFromPosition(_playerController.transform.position);
 
         // 3. Forzar la primera carga de chunks en el primer tick
@@ -77,24 +77,24 @@ public class World : MonoBehaviour
     }
 
     /// <summary>
-    /// --- MÉTODO UPDATE() ACTUALIZADO ---
-    /// Se ejecuta tan rápido como puede (Renderizado).
+    /// --- Mï¿½TODO UPDATE() ACTUALIZADO ---
+    /// Se ejecuta tan rï¿½pido como puede (Renderizado).
     /// </summary>
     private void Update()
     {
         // --- 1. Acumulador de tiempo para el Game Tick ---
         _tickTimer += Time.deltaTime;
 
-        // Si el juego se lagea (ej. 0.5s), esto correrá
-        // múltiples ticks (0.5 / 0.05 = 10 ticks) para "ponerse al día".
+        // Si el juego se lagea (ej. 0.5s), esto correrï¿½
+        // mï¿½ltiples ticks (0.5 / 0.05 = 10 ticks) para "ponerse al dï¿½a".
         while (_tickTimer >= _tickInterval)
         {
             _tickTimer -= _tickInterval;
-            Tick(); // Corre nuestra lógica de juego a 20Hz
+            Tick(); // Corre nuestra lï¿½gica de juego a 20Hz
         }
 
         // --- 2. Procesar UNA tarea de la cola por frame ---
-        // Esto reparte el "pico de lag" a través de múltiples frames.
+        // Esto reparte el "pico de lag" a travï¿½s de mï¿½ltiples frames.
         if (_chunksToLoad.Count > 0)
         {
             Vector2Int coordsToLoad = _chunksToLoad[0];
@@ -112,7 +112,7 @@ public class World : MonoBehaviour
             Vector2Int coordsToUpdate = _chunksToUpdate[0];
             _chunksToUpdate.RemoveAt(0);
 
-            // Realiza la actualización de la malla
+            // Realiza la actualizaciï¿½n de la malla
             if (_chunkObjectDictionary.TryGetValue(coordsToUpdate, out GameObject chunkObject))
             {
                 if (chunkObject != null)
@@ -124,8 +124,8 @@ public class World : MonoBehaviour
     }
 
     /// <summary>
-    /// --- ¡NUEVO MÉTODO! ---
-    /// Se ejecuta a una velocidad fija (Lógica de Juego, 20Hz).
+    /// --- ï¿½NUEVO Mï¿½TODO! ---
+    /// Se ejecuta a una velocidad fija (Lï¿½gica de Juego, 20Hz).
     /// </summary>
     private void Tick()
     {
@@ -137,14 +137,14 @@ public class World : MonoBehaviour
             UpdateLoadedChunks();
         }
 
-        // --- 2. Futura Lógica de Juego ---
+        // --- 2. Futura Lï¿½gica de Juego ---
         // UpdateMobs();
         // UpdateBlockTicks();
         // GrowPlants();
     }
 
     //
-    // --- EL RESTO DE TUS MÉTODOS (LoadChunk, UnloadChunk, etc.) ---
+    // --- EL RESTO DE TUS Mï¿½TODOS (LoadChunk, UnloadChunk, etc.) ---
     // --- NO NECESITAN CAMBIOS ---
     //
 
@@ -162,7 +162,7 @@ public class World : MonoBehaviour
         GameObject chunkObject = CreateChunkObject(chunkCoords);
         _chunkObjectDictionary.Add(chunkCoords, chunkObject);
 
-        // 3. Generar Malla (¡Pico de Lag!)
+        // 3. Generar Malla (ï¿½Pico de Lag!)
         ChunkRenderer renderer = chunkObject.GetComponent<ChunkRenderer>();
         renderer.Initialize(newChunkData, this);
 
@@ -198,16 +198,25 @@ public class World : MonoBehaviour
         // Descargar chunks
         foreach (Vector2Int loadedChunkCoords in _chunkObjectDictionary.Keys)
         {
-            int dist = Mathf.Max(
-                Mathf.Abs(loadedChunkCoords.x - _currentPlayerChunk.x),
-                Mathf.Abs(loadedChunkCoords.y - _currentPlayerChunk.y)
-            );
-
-            if (dist > _viewDistance)
+            if (GetChebyshevDistance(loadedChunkCoords, _currentPlayerChunk) > _viewDistance)
             {
                 if (!_chunksToUnload.Contains(loadedChunkCoords))
                     _chunksToUnload.Add(loadedChunkCoords);
             }
+        }
+
+        // Si el jugador volvio a rango, cancelar unload pendiente.
+        for (int i = _chunksToUnload.Count - 1; i >= 0; i--)
+        {
+            if (GetChebyshevDistance(_chunksToUnload[i], _currentPlayerChunk) <= _viewDistance)
+                _chunksToUnload.RemoveAt(i);
+        }
+
+        // Sacar de la cola de carga lo que ya quedo fuera de rango.
+        for (int i = _chunksToLoad.Count - 1; i >= 0; i--)
+        {
+            if (GetChebyshevDistance(_chunksToLoad[i], _currentPlayerChunk) > _viewDistance)
+                _chunksToLoad.RemoveAt(i);
         }
 
         // Cargar nuevos chunks
@@ -222,6 +231,39 @@ public class World : MonoBehaviour
                 }
             }
         }
+
+        // Prioridad Minecraft-like: primero los mas cercanos al jugador.
+        SortChunksByDistanceToPlayer(_chunksToLoad);
+    }
+    private static int GetChebyshevDistance(Vector2Int a, Vector2Int b)
+    {
+        return Mathf.Max(Mathf.Abs(a.x - b.x), Mathf.Abs(a.y - b.y));
+    }
+
+    private int GetDistanceSqToPlayer(Vector2Int chunkCoords)
+    {
+        int dx = chunkCoords.x - _currentPlayerChunk.x;
+        int dz = chunkCoords.y - _currentPlayerChunk.y;
+        return dx * dx + dz * dz;
+    }
+
+    private void SortChunksByDistanceToPlayer(List<Vector2Int> chunks)
+    {
+        chunks.Sort((a, b) =>
+        {
+            int distCompare = GetDistanceSqToPlayer(a).CompareTo(GetDistanceSqToPlayer(b));
+            if (distCompare != 0)
+                return distCompare;
+
+            // Desempate estable: Chebyshev, luego X/Z para orden predecible.
+            int chebyshevCompare = GetChebyshevDistance(a, _currentPlayerChunk)
+                .CompareTo(GetChebyshevDistance(b, _currentPlayerChunk));
+            if (chebyshevCompare != 0)
+                return chebyshevCompare;
+
+            int xCompare = a.x.CompareTo(b.x);
+            return xCompare != 0 ? xCompare : a.y.CompareTo(b.y);
+        });
     }
 
     private void UnloadChunk(Vector2Int chunkCoords)
@@ -246,7 +288,7 @@ public class World : MonoBehaviour
         }
     }
 
-    // --- Métodos Helper (Sin cambios) ---
+    // --- Mï¿½todos Helper (Sin cambios) ---
 
     public Chunk GetChunkData(Vector2Int chunkCoords)
     {
@@ -301,8 +343,8 @@ public class World : MonoBehaviour
     }
 
     /// <summary>
-    /// Obtiene el ID de un bloque en una posición del mundo.
-    /// (Útil para futuras mecánicas de juego)
+    /// Obtiene el ID de un bloque en una posiciï¿½n del mundo.
+    /// (ï¿½til para futuras mecï¿½nicas de juego)
     /// </summary>
     public byte GetBlock(Vector3 worldPos)
     {
@@ -310,12 +352,12 @@ public class World : MonoBehaviour
 
         if (!IsChunkLoaded(chunkCoords))
         {
-            return 0; // Si el chunk no está cargado, es aire
+            return 0; // Si el chunk no estï¿½ cargado, es aire
         }
 
         Chunk chunk = GetChunkData(chunkCoords);
 
-        // Convertir la posición del mundo a posición local del chunk
+        // Convertir la posiciï¿½n del mundo a posiciï¿½n local del chunk
         int localX = (int)worldPos.x % Chunk.ChunkWidth;
         int localY = (int)worldPos.y;
         int localZ = (int)worldPos.z % Chunk.ChunkDepth;
@@ -337,7 +379,7 @@ public class World : MonoBehaviour
 
         if (!IsChunkLoaded(chunkCoords))
         {
-            // No podemos modificar un chunk que no está cargado
+            // No podemos modificar un chunk que no estï¿½ cargado
             return;
         }
 
@@ -355,12 +397,12 @@ public class World : MonoBehaviour
         // 3. Establecer el bloque en los datos
         chunk.SetBlock(localX, localY, localZ, blockID);
 
-        // 4. Poner este chunk en la cola de actualización
-        // (El método UpdateChunk ya previene duplicados)
+        // 4. Poner este chunk en la cola de actualizaciï¿½n
+        // (El mï¿½todo UpdateChunk ya previene duplicados)
         UpdateChunk(chunkCoords);
 
-        // 5. ¡Importante! Revisar si el bloque está en un borde
-        // Si es así, también debemos actualizar al vecino.
+        // 5. ï¿½Importante! Revisar si el bloque estï¿½ en un borde
+        // Si es asï¿½, tambiï¿½n debemos actualizar al vecino.
 
         if (localX == 0)
             UpdateChunk(new Vector2Int(chunkCoords.x - 1, chunkCoords.y));
