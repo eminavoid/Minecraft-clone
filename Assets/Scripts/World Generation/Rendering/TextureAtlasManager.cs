@@ -17,6 +17,9 @@ public static class TextureAtlasManager
 
     // --- ¡FIX! Se eliminó el array estático `_uvs` ---
 
+    public static float NormalizedTileWidth => _normalizedTileWidth;
+    public static float NormalizedTileHeight => _normalizedTileHeight;
+
     /// <summary>
     /// Call this once at game startup (from World.cs)
     /// </summary>
@@ -38,36 +41,39 @@ public static class TextureAtlasManager
     }
 
     /// <summary>
-    /// --- ¡MÉTODO ACTUALIZADO Y THREAD-SAFE! ---
-    /// Gets the four UV coordinates for a quad.
+    /// Thread-safe UV lookup without allocating an array.
     /// </summary>
-    public static Vector2[] GetUVs(TextureAtlasCoord coord)
+    public static void GetUVs(
+        TextureAtlasCoord coord,
+        out Vector2 uv0,
+        out Vector2 uv1,
+        out Vector2 uv2,
+        out Vector2 uv3)
     {
-        if (_atlasWidthInTiles == 0)
+        if (_atlasWidthInTiles == 0 || coord == null)
         {
-            Debug.LogError("TextureAtlasManager not initialized! Call Initialize() first.");
-            return new Vector2[4]; // Devuelve un array vacío seguro
+            uv0 = uv1 = uv2 = uv3 = Vector2.zero;
+            return;
         }
 
-        // --- ¡ESTE ES EL FIX! ---
-        // Crea un *nuevo* array cada vez.
-        // Esto es 100% thread-safe.
-        Vector2[] newUVs = new Vector2[4];
-
-        // (La matemática es la misma)
         float uvXMin = coord.X * _normalizedTileWidth;
         float uvXMax = (coord.X + 1) * _normalizedTileWidth;
-
         float uvYMin = 1.0f - (coord.Y + 1) * _normalizedTileHeight;
         float uvYMax = 1.0f - (coord.Y) * _normalizedTileHeight;
 
-        // (Escribimos en el *nuevo* array)
-        newUVs[0] = new Vector2(uvXMin, uvYMin);
-        newUVs[1] = new Vector2(uvXMin, uvYMax);
-        newUVs[2] = new Vector2(uvXMax, uvYMax);
-        newUVs[3] = new Vector2(uvXMax, uvYMin);
+        uv0 = new Vector2(uvXMin, uvYMin);
+        uv1 = new Vector2(uvXMin, uvYMax);
+        uv2 = new Vector2(uvXMax, uvYMax);
+        uv3 = new Vector2(uvXMax, uvYMin);
+    }
 
-        return newUVs; // <-- Retorna el nuevo array
+    /// <summary>
+    /// Thread-safe UV lookup. Prefer the out-parameter overload in hot paths.
+    /// </summary>
+    public static Vector2[] GetUVs(TextureAtlasCoord coord)
+    {
+        GetUVs(coord, out Vector2 uv0, out Vector2 uv1, out Vector2 uv2, out Vector2 uv3);
+        return new Vector2[] { uv0, uv1, uv2, uv3 };
     }
 
     /// <summary>

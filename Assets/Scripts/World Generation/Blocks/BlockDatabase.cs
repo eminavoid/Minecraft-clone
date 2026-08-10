@@ -67,7 +67,7 @@ public class BlockDatabase : ScriptableObject
     /// </summary>
     public static BlockType GetBlockType(byte id)
     {
-        if (_blockDictionary.TryGetValue(id, out BlockType block))
+        if (_blockDictionary != null && _blockDictionary.TryGetValue(id, out BlockType block))
         {
             return block;
         }
@@ -75,6 +75,26 @@ public class BlockDatabase : ScriptableObject
         // Return Air as a safe fallback for unknown IDs
         Debug.LogWarning($"GetBlockType: Unknown Block ID {id}. Returning Air.");
         return Air;
+    }
+
+    /// <summary>
+    /// Thread-safe lookup without logging. Returns Air for unknown IDs.
+    /// </summary>
+    public static BlockType GetBlockTypeSilent(byte id)
+    {
+        if (_blockDictionary != null && _blockDictionary.TryGetValue(id, out BlockType block))
+            return block;
+
+        return Air;
+    }
+
+    /// <summary>
+    /// Thread-safe solidity check without logging.
+    /// </summary>
+    public static bool IsSolid(byte id)
+    {
+        BlockType block = GetBlockTypeSilent(id);
+        return block != null && block.IsSolid;
     }
 
     public static BlockType GetBlockType(string blockName)

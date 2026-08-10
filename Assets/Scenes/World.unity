@@ -238,6 +238,7 @@ MonoBehaviour:
   _tileSize: 16
   _worldSeed: 12345
   _viewDistance: 5
+  _maxWorkerJobs: 4
   _gameTickRate: 20
   _noiseScale: 0.02
   _baseTerrainHeight: 60
