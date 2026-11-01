@@ -282,7 +282,7 @@ public class World : MonoBehaviour
         if (chunkChanged || sectionChanged)
         {
             _currentPlayerSection = playerSection;
-            RefreshColliderStreaming();
+            RefreshColliderStreaming(sectionChanged);
         }
     }
 
@@ -671,7 +671,7 @@ public class World : MonoBehaviour
         }
     }
 
-    private void RefreshColliderStreaming()
+    private void RefreshColliderStreaming(bool bakePlayerSectionImmediately = false)
     {
         foreach (KeyValuePair<Vector2Int, GameObject> pair in _chunkObjectDictionary)
         {
@@ -693,7 +693,21 @@ public class World : MonoBehaviour
                 if (ShouldSectionHaveCollider(coords, section))
                 {
                     if (!sectionRenderer.HasCollider)
-                        QueueColliderBake(coords, section);
+                    {
+                        // The section the player just entered has to collide this tick.
+                        // ProcessColliderBakes only finishes one queued section per frame.
+                        if (bakePlayerSectionImmediately
+                            && coords == _currentPlayerChunk
+                            && section == _currentPlayerSection)
+                        {
+                            CancelColliderBake(coords, section);
+                            sectionRenderer.BakeCollider();
+                        }
+                        else
+                        {
+                            QueueColliderBake(coords, section);
+                        }
+                    }
                 }
                 else
                 {
