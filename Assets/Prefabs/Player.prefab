@@ -273,6 +273,7 @@ MonoBehaviour:
     m_Bits: 8
   _playerCamera: {fileID: 3131165103240972587}
   _world: {fileID: 0}
+  _highlightShader: {fileID: 4800000, guid: f3a8c1d24e6b4a0f9c7d5e1b8a2c4d60, type: 3}
 --- !u!1 &3557116329405994163
 GameObject:
   m_ObjectHideFlags: 0
