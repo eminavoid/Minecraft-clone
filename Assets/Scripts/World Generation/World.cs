@@ -147,6 +147,10 @@ public class World : MonoBehaviour
 
     private void Awake()
     {
+        // Stay off until SpawnPlayer has moved the player onto the surface.
+        if (_playerController != null)
+            _playerController.enabled = false;
+
         if (_textureAtlas == null)
         {
             Debug.LogError("World: Texture Atlas is not assigned!");

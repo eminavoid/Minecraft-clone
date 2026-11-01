@@ -36,6 +36,11 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        // World leaves the controller disabled until the spawn column exists.
+        // Skipping here avoids falling from the origin and winding up gravity.
+        if (!_controller.enabled)
+            return;
+
         // Check if the player is on the ground
         _isGrounded = _controller.isGrounded;
 
