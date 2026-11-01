@@ -140,7 +140,7 @@ CharacterController:
   m_Height: 2
   m_Radius: 0.5
   m_SlopeLimit: 45
-  m_StepOffset: 0.3
+  m_StepOffset: 0.6
   m_SkinWidth: 0.08
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 0, z: 0}
@@ -253,8 +253,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
   _playerSpeed: 5
-  _jumpHeight: 2
-  _gravityValue: -10
+  _jumpHeight: 1.2522
+  _gravityValue: -27.8267
 --- !u!114 &7852074043284785454
 MonoBehaviour:
   m_ObjectHideFlags: 0

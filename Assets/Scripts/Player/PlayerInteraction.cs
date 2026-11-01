@@ -39,6 +39,7 @@ public class PlayerInteraction : MonoBehaviour
     private Vector3 _highlightBlockPos;
     private Vector3 _placeBlockPos;
     private bool _hasHitBlock;
+    private CharacterController _controller;
 
     // El 'heldBlockID' hardcodeado se ha eliminado
 
@@ -111,12 +112,50 @@ public class PlayerInteraction : MonoBehaviour
             // Obtiene el bloque del slot actual de la hotbar
             byte blockToPlace = _hotbarBlockIDs[_currentHotbarSlot];
 
-            // No coloques "Aire"
-            if (blockToPlace != 0)
+            // No coloques "Aire", ni un bloque que atraviese la cápsula:
+            // el CharacterController se queda atascado y el step offset no lo saca.
+            if (blockToPlace != 0 && !TargetCellIntersectsPlayer(_placeBlockPos))
             {
                 _world.SetBlock(_placeBlockPos, blockToPlace);
             }
         }
+    }
+
+    /// <summary>
+    /// True when the 1 m cell overlaps the CharacterController capsule.
+    /// The body only yaws, so the capsule axis stays world-up.
+    /// </summary>
+    private bool TargetCellIntersectsPlayer(Vector3 cellMin)
+    {
+        if (_controller == null)
+            _controller = GetComponent<CharacterController>();
+        if (_controller == null)
+            return false;
+
+        Vector3 scale = transform.lossyScale;
+        float radius = _controller.radius * Mathf.Max(Mathf.Abs(scale.x), Mathf.Abs(scale.z));
+        float height = _controller.height * Mathf.Abs(scale.y);
+        if (height < radius * 2f)
+            height = radius * 2f;
+
+        Vector3 center = transform.TransformPoint(_controller.center);
+        float halfSegment = Mathf.Max(0f, height * 0.5f - radius);
+        float segmentMinY = center.y - halfSegment;
+        float segmentMaxY = center.y + halfSegment;
+
+        float closestX = Mathf.Clamp(center.x, cellMin.x, cellMin.x + 1f);
+        float closestZ = Mathf.Clamp(center.z, cellMin.z, cellMin.z + 1f);
+        float dx = center.x - closestX;
+        float dz = center.z - closestZ;
+
+        float cellMaxY = cellMin.y + 1f;
+        float dy = 0f;
+        if (cellMaxY < segmentMinY)
+            dy = segmentMinY - cellMaxY;
+        else if (cellMin.y > segmentMaxY)
+            dy = cellMin.y - segmentMaxY;
+
+        return dx * dx + dy * dy + dz * dz <= radius * radius;
     }
 
     /// <summary>
