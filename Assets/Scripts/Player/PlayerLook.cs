@@ -23,13 +23,18 @@ public class PlayerLook : MonoBehaviour
 
     void Start()
     {
-        // Lock and hide the cursor
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        SetCursorLocked(true);
     }
 
     void Update()
     {
+        // Mouse delta would spin the view while the cursor is free.
+        if (Cursor.lockState != CursorLockMode.Locked)
+        {
+            _lookInput = Vector2.zero;
+            return;
+        }
+
         // 1. Get input values
         float mouseX = _lookInput.x * _mouseSensitivity * Time.deltaTime;
         float mouseY = _lookInput.y * _mouseSensitivity * Time.deltaTime;
@@ -53,6 +58,31 @@ public class PlayerLook : MonoBehaviour
     /// </summary>
     public void OnLook(InputValue value)
     {
+        if (Cursor.lockState != CursorLockMode.Locked)
+        {
+            _lookInput = Vector2.zero;
+            return;
+        }
+
         _lookInput = value.Get<Vector2>();
+    }
+
+    /// <summary>
+    /// Called by the Input Action "ToggleCursor" (Escape).
+    /// </summary>
+    public void OnToggleCursor(InputValue value)
+    {
+        if (!value.isPressed)
+            return;
+
+        SetCursorLocked(Cursor.lockState != CursorLockMode.Locked);
+    }
+
+    private void SetCursorLocked(bool locked)
+    {
+        Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
+        Cursor.visible = !locked;
+        if (!locked)
+            _lookInput = Vector2.zero;
     }
 }
