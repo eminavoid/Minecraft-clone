@@ -15,15 +15,18 @@ public class PlayerController : MonoBehaviour
     [SerializeField]
     private float _playerSpeed = 5.0f;
 
+    // Minecraft Java at 20 Hz: vy starts at 0.42 blocks/tick, then
+    // vy = (vy - 0.08) * 0.98. Apex is 1.2522 blocks at 0.30 s.
+    // Constant gravity with that apex and time-to-peak is g = -2h / t^2.
     [SerializeField]
-    private float _jumpHeight = 1.8f;
+    private float _jumpHeight = 1.2522f;
 
     // --- Private Fields ---
     private CharacterController _controller;
 
     private float _verticalVelocity;
     [SerializeField]
-    private float _gravityValue = -9.81f;
+    private float _gravityValue = -27.8267f;
     private bool _isGrounded;
 
     // This stores the raw Vector2 from the Input System
@@ -36,6 +39,11 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        // World leaves the controller disabled until the spawn column exists.
+        // Skipping here avoids falling from the origin and winding up gravity.
+        if (!_controller.enabled)
+            return;
+
         // Check if the player is on the ground
         _isGrounded = _controller.isGrounded;
 

@@ -518,7 +518,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7852074043284785454, guid: b985c1670dc7fc04b8d9b1722fccaa95, type: 3}
       propertyPath: '_hotbarBlockIDs.Array.data[0]'
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7852074043284785454, guid: b985c1670dc7fc04b8d9b1722fccaa95, type: 3}
       propertyPath: '_hotbarBlockIDs.Array.data[1]'
